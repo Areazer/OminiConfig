@@ -166,5 +166,4 @@ pytest tests/test_adapter.py -v --tb=short
 - **测试框架**: pytest
 
 ## 许可证
-
-MIT
+License: GPL-3.0
