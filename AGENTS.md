@@ -708,6 +708,174 @@ doc/context/
 
 ---
 
+## 10. 🤖 机器智能体接入指南 (Agent Integration Guide)
+
+本文件专为 AI Agent（如 Claude, GPT-4, Kimi）编写。在为其他项目生成接入 OminiConfig 的代码时，请严格遵守以下契约，禁止任何猜测。
+
+### 10.1 核心寻址规则 (Addressing Rule)
+
+- OminiConfig 的所有 API 均不接受绝对路径（如 `/etc/config.json`）。
+- API 路径中的 `{source_path}` 必须是相对于 **OminiConfig 服务启动目录** 的相对路径。
+- **编码要求**：在发起 HTTP 请求前，如果路径包含特殊字符或多层级（如 `folder/sub/conf.json`），不需要对 `/` 进行 URL Encode，直接作为 Path Variable 拼接。
+
+### 10.2 严格状态码契约 (Status Code Contract)
+
+在编写 HTTP Client 时，你必须实现对以下状态码的精确捕获：
+
+| 状态码 | 含义 | 处理建议 |
+|--------|------|----------|
+| `200 OK` | 读写成功 | 正常处理响应数据 |
+| `400 Bad Request` | 请求体格式错误（如非法的 JSON） | 检查请求体格式，重试 |
+| `403 Forbidden` | 触发安全沙箱（检测到 `../` 路径穿越行为） | 检查路径是否包含非法字符，使用合法相对路径 |
+| `404 Not Found` | 目标配置文件不存在 | 读取时需确保文件存在；写入时会自动创建，无需处理 |
+| `409 Conflict` | 乐观锁冲突 | 请求体中的 `oldVersionHash` 与服务端最新 Hash 不一致，需要重新读取配置获取最新 Hash 后重试 |
+
+### 10.3 终极接口定义 (The Source of Truth)
+
+OminiConfig 基于 FastAPI 构建。不要试图从 Markdown 中猜测详细的字段类型。
+
+**你的第一动作：** 请直接向 OminiConfig 服务发送 `GET /openapi.json` 请求，获取完整的、符合 OpenAPI 3.0 规范的 Schema 定义，并严格按照该 JSON 定义生成接入代码或强类型接口（Type Definitions）。
+
+**示例**：
+```bash
+curl http://localhost:8000/openapi.json
+```
+
+### 10.4 实时监听约定 (SSE Contract)
+
+如果目标项目需要监听配置变化，请使用 Server-Sent Events 连接 `/api/watch/{source_path}`。
+
+**必须处理的事件类型**：
+
+| 事件类型 | 触发时机 | 处理建议 |
+|----------|----------|----------|
+| `connected` | SSE 连接建立成功 | 记录日志，初始化监听状态 |
+| `modified` | 配置文件被修改 | **关键事件**：Event Data 包含 `newVersionHash` 和 `newData`，需要对比本地 Hash，如果不一致则提示用户刷新 |
+| `deleted` | 配置文件被删除 | 提示用户配置文件已删除，清理本地状态 |
+| `heartbeat` | 保活心跳（每 30 秒） | 忽略即可，无需回应，仅用于检测连接状态 |
+
+**JavaScript 示例**：
+```javascript
+const es = new EventSource('http://localhost:8000/api/watch/app/config.json');
+
+es.addEventListener('modified', (event) => {
+  const data = JSON.parse(event.data);
+  if (data.newVersionHash !== localVersionHash) {
+    // 显示冲突提示，让用户选择是否刷新
+    showConflictWarning();
+  }
+});
+
+es.addEventListener('heartbeat', () => {
+  // 忽略心跳事件
+  console.log('Heartbeat received');
+});
+```
+
+### 10.5 接入代码生成模板
+
+#### Python (httpx)
+```python
+import httpx
+
+class OminiConfigClient:
+    def __init__(self, base_url: str = "http://localhost:8000"):
+        self.base_url = base_url
+        self.client = httpx.Client()
+    
+    def read_config(self, source_path: str):
+        """读取配置"""
+        response = self.client.get(f"{self.base_url}/api/config/{source_path}")
+        response.raise_for_status()
+        return response.json()
+    
+    def write_config(self, source_path: str, data: dict, version_hash: str):
+        """写入配置，自动处理乐观锁冲突"""
+        response = self.client.post(
+            f"{self.base_url}/api/config/{source_path}",
+            json={"data": data, "oldVersionHash": version_hash}
+        )
+        if response.status_code == 409:
+            # 乐观锁冲突，需要重新读取
+            raise ConfigConflictError("配置已被修改，请重新读取后重试")
+        response.raise_for_status()
+        return response.json()
+
+class ConfigConflictError(Exception):
+    pass
+```
+
+#### JavaScript/TypeScript (fetch)
+```typescript
+interface ConfigResult {
+  data: any;
+  meta: {
+    versionHash: string;
+    lastModified: number;
+  };
+}
+
+class OminiConfigClient {
+  private baseUrl: string;
+  
+  constructor(baseUrl: string = "http://localhost:8000") {
+    this.baseUrl = baseUrl;
+  }
+  
+  async readConfig(sourcePath: string): Promise<ConfigResult> {
+    const response = await fetch(`${this.baseUrl}/api/config/${sourcePath}`);
+    if (!response.ok) {
+      throw new Error(`Failed to read config: ${response.status}`);
+    }
+    return response.json();
+  }
+  
+  async writeConfig(
+    sourcePath: string, 
+    data: any, 
+    versionHash: string
+  ): Promise<ConfigResult> {
+    const response = await fetch(`${this.baseUrl}/api/config/${sourcePath}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ data, oldVersionHash: versionHash }),
+    });
+    
+    if (response.status === 409) {
+      throw new Error("Config conflict: version hash mismatch");
+    }
+    
+    if (!response.ok) {
+      throw new Error(`Failed to write config: ${response.status}`);
+    }
+    
+    return response.json();
+  }
+  
+  watchConfig(sourcePath: string, onModified: (data: any) => void) {
+    const es = new EventSource(`${this.baseUrl}/api/watch/${sourcePath}`);
+    
+    es.addEventListener("modified", (event) => {
+      const data = JSON.parse(event.data);
+      onModified(data);
+    });
+    
+    return () => es.close();
+  }
+}
+```
+
+### 10.6 禁止事项
+
+作为 AI Agent，在生成接入代码时 **禁止**：
+- ❌ 猜测字段类型或 API 行为（必须查看 `/openapi.json`）
+- ❌ 使用绝对路径（如 `/etc/config.json`）
+- ❌ 忽略 `409 Conflict` 状态码
+- ❌ 在 SSE 连接中对 `heartbeat` 事件做出响应
+- ❌ 自动刷新用户正在编辑的数据（必须让用户确认）
+
+---
+
 ## 附录：快速参考
 
 ### 添加新适配器的完整流程
