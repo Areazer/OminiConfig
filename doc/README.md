@@ -9,22 +9,28 @@ doc/
 ├── README.md                    # 本文档：目录结构总览
 ├── architecture/               # 架构设计文档
 │   ├── README.md              # 架构文档索引
-│   ├── v1_overview.md         # v1 版本架构概览
-│   └── v2_enterprise.md       # v2 企业级架构设计
+│   ├── v1_overview.md         # v1 Python 版本架构（历史归档）
+│   └── v2_enterprise.md       # v2 Rust + Tauri 架构设计（当前）
 ├── guides/                     # 开发指南
 │   ├── README.md              # 指南索引
-│   ├── getting_started.md     # 快速开始指南
-│   └── development_workflow.md # 开发工作流程
-├── api/                        # API 文档
-│   ├── README.md              # API 文档索引
-│   ├── rest_api.md            # REST API 参考
-│   └── sse_specification.md   # SSE 实时接口规范
-└── standards/                  # 规范与标准
-    ├── README.md              # 规范索引
-    ├── coding_standards.md    # 代码规范
-    ├── testing_standards.md   # 测试规范
-    └── commit_convention.md   # 提交规范
+│   ├── getting_started.md     # 快速开始指南（Rust 版本）
+│   └── agent_integration.md   # AI Agent IPC 集成规范
+├── api/                        # API 文档（待补充）
+│   └── README.md              # API 文档索引
+└── standards/                  # 规范与标准（待补充）
+    └── README.md              # 规范索引
 ```
+
+## ⚠️ 版本说明
+
+**当前版本：V2.0 (Rust + Tauri)**
+
+本文档目录已全面更新为 V2.0 内容。V1.x Python 版本的文档已归档或标记为历史。
+
+**主要变更：**
+- ❌ 移除: REST API 文档、SSE 规范（V2.0 使用 Tauri IPC）
+- ✅ 新增: IPC 集成规范、Rust 架构设计
+- ✅ 更新: 快速开始指南（Rust 安装方式）
 
 ## 文档命名规范
 
