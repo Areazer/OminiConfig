@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>OminiConfig - 通用配置管理器</title>
+    <title>OminiConfig V2.0 - Native Desktop</title>
     
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
@@ -26,8 +26,17 @@
     <!-- Vue 3 -->
     <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
     
+    <!-- Tauri API -->
+    <script type="module">
+        // 动态导入 Tauri API
+        const { invoke } = window.__TAURI__?.tauri || {};
+        const { listen } = window.__TAURI__?.event || {};
+        
+        window.tauriInvoke = invoke || (() => Promise.reject('Tauri not loaded'));
+        window.tauriListen = listen || (() => Promise.reject('Tauri not loaded'));
+    </script>
+    
     <style>
-        /* 自定义滚动条 */
         ::-webkit-scrollbar {
             width: 8px;
             height: 8px;
@@ -43,7 +52,6 @@
             background: #64748b;
         }
         
-        /* 树形引导线动画 */
         .tree-line {
             position: relative;
         }
@@ -58,7 +66,6 @@
             opacity: 0.5;
         }
         
-        /* Toast 动画 */
         .toast-enter-active,
         .toast-leave-active {
             transition: all 0.3s ease;
@@ -69,88 +76,13 @@
             transform: translateY(-100%);
         }
         
-        /* 输入框聚焦发光效果 */
         .glow-input:focus {
             box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.2);
-        }
-        
-        /* 加载动画 */
-        @keyframes pulse-ring {
-            0% { transform: scale(0.8); opacity: 0.5; }
-            100% { transform: scale(1.2); opacity: 0; }
-        }
-        .loading-ring {
-            animation: pulse-ring 1.5s cubic-bezier(0.4, 0, 0.6, 1) infinite;
         }
     </style>
 </head>
 <body class="bg-slate-950 text-slate-100 min-h-screen">
     <div id="app" class="min-h-screen flex flex-col">
-        <!-- 顶部导航栏 -->
-        <header class="bg-slate-900 border-b border-slate-800 sticky top-0 z-40">
-            <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-                <div class="flex items-center justify-between h-16">
-                    <!-- Logo -->
-                    <div class="flex items-center space-x-3">
-                        <div class="w-8 h-8 bg-gradient-to-br from-emerald-500 to-blue-600 rounded-lg flex items-center justify-center">
-                            <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path>
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path>
-                            </svg>
-                        </div>
-                        <div>
-                            <h1 class="text-xl font-bold bg-gradient-to-r from-emerald-400 to-blue-400 bg-clip-text text-transparent">
-                                OminiConfig
-                            </h1>
-                            <p class="text-xs text-slate-500">通用配置管理器</p>
-                        </div>
-                    </div>
-                    
-                    <!-- 文件路径显示 -->
-                    <div class="hidden md:flex items-center space-x-2 px-4 py-2 bg-slate-800 rounded-lg border border-slate-700">
-                        <svg class="w-4 h-4 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
-                        </svg>
-                        <code class="text-sm text-emerald-400 font-mono">{{ configPath }}</code>
-                    </div>
-                    
-                    <!-- 右侧操作区 -->
-                    <div class="flex items-center space-x-4">
-                        <!-- 连接状态 -->
-                        <div class="flex items-center space-x-2">
-                            <div :class="[
-                                'w-2 h-2 rounded-full',
-                                sseConnected ? 'bg-emerald-500 animate-pulse' : 'bg-red-500'
-                            ]"></div>
-                            <span class="text-xs text-slate-500 hidden sm:inline">
-                                {{ sseConnected ? '实时同步中' : '已断开' }}
-                            </span>
-                        </div>
-                        
-                        <!-- 保存按钮 -->
-                        <button 
-                            @click="saveConfig"
-                            :disabled="isSaving || !hasChanges"
-                            :class="[
-                                'px-6 py-2 rounded-lg font-medium transition-all duration-200 flex items-center space-x-2',
-                                isSaving || !hasChanges
-                                    ? 'bg-slate-700 text-slate-500 cursor-not-allowed'
-                                    : 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-lg shadow-emerald-500/20 hover:shadow-emerald-500/30'
-                            ]"
-                        >
-                            <svg v-if="isSaving" class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
-                                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                            </svg>
-                            <svg v-else class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4"></path>
-                            </svg>
-                            <span>{{ isSaving ? '保存中...' : '保存' }}</span>
-                        </button>
-                    </div>
-                </div>
-            </div>
-        </header>
         
         <!-- Toast 通知栏（防冲突提示） -->
         <transition name="toast">
@@ -159,7 +91,7 @@
                     <div class="flex items-start space-x-3">
                         <div class="flex-shrink-0">
                             <svg class="w-6 h-6 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path>
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/>
                             </svg>
                         </div>
                         <div class="flex-1">
@@ -174,13 +106,13 @@
                             </p>
                             <div class="flex items-center space-x-3">
                                 <button 
-                                    @click="reloadPage"
+                                    @click="reloadConfig"
                                     class="px-4 py-2 bg-amber-600 hover:bg-amber-500 text-white text-sm rounded-lg font-medium transition-colors flex items-center space-x-2"
                                 >
                                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
                                     </svg>
-                                    <span>刷新页面</span>
+                                    <span>刷新配置</span>
                                 </button>
                                 <button 
                                     @click="dismissToast"
@@ -195,13 +127,63 @@
             </div>
         </transition>
         
+        <!-- 顶部导航栏 -->
+        <header class="bg-slate-900 border-b border-slate-800 sticky top-0 z-40">
+            <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+                <div class="flex items-center justify-between h-16">
+                    <div class="flex items-center space-x-3">
+                        <div class="w-8 h-8 bg-gradient-to-br from-emerald-500 to-blue-600 rounded-lg flex items-center justify-center">
+                            <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/>
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+                            </svg>
+                        </div>
+                        <div>
+                            <h1 class="text-xl font-bold bg-gradient-to-r from-emerald-400 to-blue-400 bg-clip-text text-transparent">
+                                OminiConfig V2.0
+                            </h1>
+                            <p class="text-xs text-slate-500">Native Desktop</p>
+                        </div>
+                    </div>
+                    
+                    <div class="hidden md:flex items-center space-x-2 px-4 py-2 bg-slate-800 rounded-lg border border-slate-700">
+                        <svg class="w-4 h-4 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                        </svg>
+                        <code class="text-sm text-emerald-400 font-mono">{{ configPath }}</code>
+                    </div>
+                    
+                    <div class="flex items-center space-x-4">
+                        <div class="flex items-center space-x-2">
+                            <div :class="['w-2 h-2 rounded-full', isWatching ? 'bg-emerald-500 animate-pulse' : 'bg-red-500']"></div>
+                            <span class="text-xs text-slate-500 hidden sm:inline">{{ isWatching ? '监听中' : '已停止' }}</span>
+                        </div>
+                        
+                        <button 
+                            @click="saveConfig"
+                            :disabled="isSaving || !hasChanges"
+                            :class="['px-6 py-2 rounded-lg font-medium transition-all duration-200 flex items-center space-x-2', isSaving || !hasChanges ? 'bg-slate-700 text-slate-500 cursor-not-allowed' : 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-lg shadow-emerald-500/20']"
+                        >
+                            <svg v-if="isSaving" class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
+                                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"/>
+                            </svg>
+                            <svg v-else class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4"/>
+                            </svg>
+                            <span>{{ isSaving ? '保存中...' : '保存' }}</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </header>
+        
         <!-- 主内容区 -->
         <main class="flex-1 max-w-7xl mx-auto w-full px-4 sm:px-6 lg:px-8 py-8">
-            <!-- 错误提示 -->
             <div v-if="error" class="mb-6 p-4 bg-red-500/10 border border-red-500/30 rounded-lg">
                 <div class="flex items-center space-x-3">
                     <svg class="w-6 h-6 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
                     </svg>
                     <div>
                         <h3 class="text-red-400 font-semibold">加载失败</h3>
@@ -216,7 +198,6 @@
                 </div>
             </div>
             
-            <!-- 加载状态 -->
             <div v-if="isLoading" class="flex flex-col items-center justify-center py-20">
                 <div class="relative">
                     <div class="w-16 h-16 border-4 border-emerald-500/20 border-t-emerald-500 rounded-full animate-spin"></div>
@@ -225,9 +206,7 @@
                 <p class="mt-4 text-slate-500">正在加载配置...</p>
             </div>
             
-            <!-- 配置表单 -->
             <div v-else-if="schema && configData" class="space-y-6">
-                <!-- 元信息卡片 -->
                 <div class="bg-slate-900 border border-slate-800 rounded-xl p-4 flex flex-wrap items-center justify-between gap-4">
                     <div class="flex items-center space-x-6">
                         <div>
@@ -249,13 +228,12 @@
                     </div>
                 </div>
                 
-                <!-- 表单区域 -->
                 <div class="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden">
                     <div class="px-6 py-4 border-b border-slate-800 bg-slate-850 flex items-center justify-between">
                         <h2 class="text-lg font-semibold text-slate-200">配置编辑</h2>
                         <div class="flex items-center space-x-2 text-xs text-slate-500">
                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
                             </svg>
                             <span>自动根据 Schema 生成表单</span>
                         </div>
@@ -270,58 +248,29 @@
                     </div>
                 </div>
             </div>
-            
-            <!-- 空状态 -->
-            <div v-else class="flex flex-col items-center justify-center py-20 text-slate-500">
-                <svg class="w-16 h-16 mb-4 opacity-30" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
-                </svg>
-                <p>暂无配置数据</p>
-                <button 
-                    @click="loadConfig"
-                    class="mt-4 px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg text-sm transition-colors"
-                >
-                    重新加载
-                </button>
-            </div>
         </main>
         
-        <!-- 页脚 -->
         <footer class="bg-slate-900 border-t border-slate-800 py-4">
             <div class="max-w-7xl mx-auto px-4 text-center text-sm text-slate-600">
-                OminiConfig &copy; 2026 | 基于 Vue 3 + Tailwind CSS 构建
+                OminiConfig V2.0 Native (Rust + Tauri) &copy; 2026
             </div>
         </footer>
     </div>
     
-    <!-- Vue 3 应用逻辑 -->
     <script>
-        const { createApp, ref, computed, watch, onMounted, onUnmounted } = Vue;
+        const { createApp, ref, computed, onMounted } = Vue;
         
-        // API 基础配置
-        const API_BASE_URL = ''; // 空字符串表示同源
+        const { invoke } = window.__TAURI__.tauri;
+        const { listen } = window.__TAURI__.event;
+        
         const CONFIG_PATH = 'app/settings.json';
         
-        // 递归表单组件
         const SchemaForm = {
             name: 'SchemaForm',
             props: {
-                schema: {
-                    type: Object,
-                    required: true
-                },
-                modelValue: {
-                    type: [Object, Array, String, Number, Boolean],
-                    default: null
-                },
-                root: {
-                    type: Boolean,
-                    default: false
-                },
-                propertyName: {
-                    type: String,
-                    default: ''
-                }
+                schema: { type: Object, required: true },
+                modelValue: { type: [Object, Array, String, Number, Boolean], default: null },
+                root: { type: Boolean, default: false },
             },
             emits: ['update:modelValue'],
             setup(props, { emit }) {
@@ -329,18 +278,6 @@
                     get: () => props.modelValue,
                     set: (val) => emit('update:modelValue', val)
                 });
-                
-                const getTypeIcon = (type) => {
-                    const icons = {
-                        string: 'M7 8h10M7 12h4m1 8l-4-4H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-3l-4 4z',
-                        number: 'M7 20l4-16m2 16l4-16M6 9h14M4 15h14',
-                        boolean: 'M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z',
-                        array: 'M4 6h16M4 12h16M4 18h16',
-                        object: 'M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10',
-                        null: 'M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636'
-                    };
-                    return icons[type] || icons.string;
-                };
                 
                 const getTypeColor = (type) => {
                     const colors = {
@@ -354,11 +291,8 @@
                     return colors[type] || colors.string;
                 };
                 
-                // 数组操作
                 const addArrayItem = () => {
-                    if (!Array.isArray(value.value)) {
-                        value.value = [];
-                    }
+                    if (!Array.isArray(value.value)) value.value = [];
                     const itemSchema = props.schema.items || { type: 'string' };
                     let defaultValue;
                     switch (itemSchema.type) {
@@ -377,17 +311,10 @@
                     }
                 };
                 
-                return {
-                    value,
-                    getTypeIcon,
-                    getTypeColor,
-                    addArrayItem,
-                    removeArrayItem
-                };
+                return { value, getTypeColor, addArrayItem, removeArrayItem };
             },
             template: `
                 <div class="space-y-4">
-                    <!-- 对象类型 -->
                     <div v-if="schema.type === 'object' && schema.properties" 
                          :class="['tree-line', !root ? 'pl-4 border-l-2 border-slate-700/50 ml-2' : '']">
                         <div v-for="(propSchema, key) in schema.properties" :key="key" class="mb-4">
@@ -399,116 +326,60 @@
                                     {{ key }}
                                     <span v-if="schema.required?.includes(key)" class="text-red-400">*</span>
                                 </label>
-                                <span v-if="propSchema.description" class="text-xs text-slate-500">
-                                    {{ propSchema.description }}
-                                </span>
                             </div>
-                            <schema-form
-                                :schema="propSchema"
-                                v-model="value[key]"
-                                :property-name="key"
-                            ></schema-form>
+                            <schema-form :schema="propSchema" v-model="value[key]"></schema-form>
                         </div>
                     </div>
                     
-                    <!-- 数组类型 -->
                     <div v-else-if="schema.type === 'array'" 
                          :class="['tree-line', !root ? 'pl-4 border-l-2 border-slate-700/50 ml-2' : '']">
                         <div v-if="Array.isArray(value)" class="space-y-2">
                             <div v-for="(item, index) in value" :key="index" 
                                  class="flex items-start space-x-2 p-3 bg-slate-800/50 rounded-lg border border-slate-700/50">
-                                <span class="flex-shrink-0 w-6 h-6 flex items-center justify-center bg-slate-700 text-slate-400 text-xs rounded">
-                                    {{ index }}
-                                </span>
+                                <span class="flex-shrink-0 w-6 h-6 flex items-center justify-center bg-slate-700 text-slate-400 text-xs rounded">{{ index }}</span>
                                 <div class="flex-1">
-                                    <schema-form
-                                        :schema="schema.items || { type: 'string' }"
-                                        v-model="value[index]"
-                                    ></schema-form>
+                                    <schema-form :schema="schema.items || { type: 'string' }" v-model="value[index]"></schema-form>
                                 </div>
-                                <button 
-                                    @click="removeArrayItem(index)"
-                                    class="flex-shrink-0 p-1 text-slate-500 hover:text-red-400 transition-colors"
-                                    title="删除此项"
-                                >
+                                <button @click="removeArrayItem(index)" class="flex-shrink-0 p-1 text-slate-500 hover:text-red-400 transition-colors">
                                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path>
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
                                     </svg>
                                 </button>
                             </div>
                         </div>
-                        <button 
-                            @click="addArrayItem"
-                            class="mt-2 px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 text-sm rounded-lg border border-slate-700 transition-colors flex items-center space-x-2"
-                        >
+                        <button @click="addArrayItem" class="mt-2 px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 text-sm rounded-lg border border-slate-700 transition-colors flex items-center space-x-2">
                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path>
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
                             </svg>
                             <span>添加项</span>
                         </button>
                     </div>
                     
-                    <!-- 字符串类型 -->
                     <div v-else-if="schema.type === 'string'">
-                        <input 
-                            v-model="value"
-                            type="text"
-                            :placeholder="schema.description || '请输入文本'"
-                            class="w-full px-4 py-2 bg-slate-800 border border-slate-700 rounded-lg text-slate-200 placeholder-slate-500 focus:outline-none focus:border-emerald-500/50 glow-input transition-all"
-                        >
+                        <input v-model="value" type="text" 
+                               class="w-full px-4 py-2 bg-slate-800 border border-slate-700 rounded-lg text-slate-200 placeholder-slate-500 focus:outline-none focus:border-emerald-500/50 glow-input transition-all"/>
                     </div>
                     
-                    <!-- 数字类型 -->
                     <div v-else-if="schema.type === 'number'">
-                        <input 
-                            v-model.number="value"
-                            type="number"
-                            :placeholder="schema.description || '请输入数字'"
-                            class="w-full px-4 py-2 bg-slate-800 border border-slate-700 rounded-lg text-slate-200 placeholder-slate-500 focus:outline-none focus:border-emerald-500/50 glow-input transition-all"
-                        >
+                        <input v-model.number="value" type="number" 
+                               class="w-full px-4 py-2 bg-slate-800 border border-slate-700 rounded-lg text-slate-200 placeholder-slate-500 focus:outline-none focus:border-emerald-500/50 glow-input transition-all"/>
                     </div>
                     
-                    <!-- 布尔类型 -->
                     <div v-else-if="schema.type === 'boolean'" class="flex items-center space-x-3">
-                        <button 
-                            @click="value = !value"
-                            :class="[
-                                'relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-emerald-500/50',
-                                value ? 'bg-emerald-600' : 'bg-slate-700'
-                            ]"
-                        >
-                            <span :class="[
-                                'inline-block h-4 w-4 transform rounded-full bg-white transition-transform',
-                                value ? 'translate-x-6' : 'translate-x-1'
-                            ]"></span>
+                        <button @click="value = !value" :class="['relative inline-flex h-6 w-11 items-center rounded-full transition-colors', value ? 'bg-emerald-600' : 'bg-slate-700']">
+                            <span :class="['inline-block h-4 w-4 transform rounded-full bg-white transition-transform', value ? 'translate-x-6' : 'translate-x-1']"></span>
                         </button>
                         <span class="text-sm text-slate-400">{{ value ? '是' : '否' }}</span>
                     </div>
                     
-                    <!-- 空值类型 -->
-                    <div v-else-if="schema.type === 'null'" class="text-slate-500 text-sm italic">
-                        null
-                    </div>
-                    
-                    <!-- 其他/未知类型 -->
-                    <div v-else>
-                        <input 
-                            v-model="value"
-                            type="text"
-                            class="w-full px-4 py-2 bg-slate-800 border border-slate-700 rounded-lg text-slate-200 focus:outline-none focus:border-emerald-500/50 glow-input transition-all"
-                        >
-                    </div>
+                    <div v-else class="text-slate-500 text-sm italic">null</div>
                 </div>
             `
         };
         
-        // 主应用
         createApp({
-            components: {
-                SchemaForm
-            },
+            components: { SchemaForm },
             setup() {
-                // 状态
                 const configPath = ref(CONFIG_PATH);
                 const schema = ref(null);
                 const configData = ref(null);
@@ -520,198 +391,105 @@
                 
                 const isLoading = ref(false);
                 const isSaving = ref(false);
+                const isWatching = ref(false);
                 const error = ref(null);
-                
-                const sseConnected = ref(false);
                 const showConflictToast = ref(false);
-                const eventSource = ref(null);
+                const unlisten = ref(null);
                 
-                // 计算属性
-                const hasChanges = computed(() => {
-                    return JSON.stringify(configData.value) !== JSON.stringify(originalData.value);
-                });
+                const hasChanges = computed(() => JSON.stringify(configData.value) !== JSON.stringify(originalData.value));
                 
-                // 方法
                 const formatDate = (timestamp) => {
                     if (!timestamp) return '-';
-                    const date = new Date(timestamp * 1000);
-                    return date.toLocaleString('zh-CN');
+                    return new Date(timestamp * 1000).toLocaleString('zh-CN');
                 };
                 
-                // 加载配置和 Schema
                 const loadConfig = async () => {
                     isLoading.value = true;
                     error.value = null;
                     
                     try {
-                        // 并行加载 Schema 和 Config
                         const [schemaRes, configRes] = await Promise.all([
-                            fetch(`${API_BASE_URL}/api/schema/${configPath.value}`),
-                            fetch(`${API_BASE_URL}/api/config/${configPath.value}`)
+                            invoke('get_schema', { path: configPath.value }),
+                            invoke('read_config', { path: configPath.value })
                         ]);
                         
-                        if (!schemaRes.ok) {
-                            throw new Error(`加载 Schema 失败: ${schemaRes.status}`);
-                        }
-                        if (!configRes.ok) {
-                            throw new Error(`加载配置失败: ${configRes.status}`);
-                        }
+                        schema.value = schemaRes;
+                        configData.value = JSON.parse(JSON.stringify(configRes.data));
+                        originalData.value = JSON.parse(JSON.stringify(configRes.data));
+                        versionHash.value = configRes.meta.version_hash;
+                        localHash.value = configRes.meta.version_hash;
+                        lastModified.value = configRes.meta.last_modified;
                         
-                        const schemaData = await schemaRes.json();
-                        const configDataResponse = await configRes.json();
-                        
-                        schema.value = schemaData.schema;
-                        configData.value = JSON.parse(JSON.stringify(configDataResponse.data));
-                        originalData.value = JSON.parse(JSON.stringify(configDataResponse.data));
-                        versionHash.value = configDataResponse.meta.versionHash;
-                        localHash.value = configDataResponse.meta.versionHash;
-                        lastModified.value = configDataResponse.meta.lastModified;
-                        
-                        // 连接 SSE
-                        connectSSE();
-                        
+                        setupWatcher();
                     } catch (err) {
-                        error.value = err.message;
-                        console.error('加载失败:', err);
+                        error.value = err.message || '加载失败';
                     } finally {
                         isLoading.value = false;
                     }
                 };
                 
-                // 保存配置
                 const saveConfig = async () => {
                     if (!hasChanges.value) return;
-                    
                     isSaving.value = true;
-                    error.value = null;
                     
                     try {
-                        const response = await fetch(`${API_BASE_URL}/api/config/${configPath.value}`, {
-                            method: 'POST',
-                            headers: {
-                                'Content-Type': 'application/json'
-                            },
-                            body: JSON.stringify({
-                                data: configData.value,
-                                oldVersionHash: versionHash.value
-                            })
+                        const result = await invoke('write_config', {
+                            path: configPath.value,
+                            data: configData.value,
+                            oldHash: versionHash.value
                         });
                         
-                        if (!response.ok) {
-                            const errData = await response.json();
-                            throw new Error(errData.detail?.message || `保存失败: ${response.status}`);
-                        }
-                        
-                        const result = await response.json();
-                        
-                        // 更新状态
-                        versionHash.value = result.meta.versionHash;
-                        localHash.value = result.meta.versionHash;
+                        versionHash.value = result.meta.version_hash;
+                        localHash.value = result.meta.version_hash;
                         originalData.value = JSON.parse(JSON.stringify(configData.value));
-                        lastModified.value = result.meta.lastModified;
-                        
-                        // 显示成功提示
-                        showNotification('保存成功', 'success');
-                        
+                        lastModified.value = result.meta.last_modified;
                     } catch (err) {
-                        error.value = err.message;
-                        showNotification(err.message, 'error');
+                        error.value = err.message || '保存失败';
                     } finally {
                         isSaving.value = false;
                     }
                 };
                 
-                // 连接 SSE
-                const connectSSE = () => {
-                    // 关闭旧连接
-                    if (eventSource.value) {
-                        eventSource.value.close();
+                const setupWatcher = async () => {
+                    if (unlisten.value) {
+                        unlisten.value();
+                        unlisten.value = null;
                     }
                     
                     try {
-                        eventSource.value = new EventSource(`${API_BASE_URL}/api/watch/${configPath.value}`);
-                        
-                        eventSource.value.addEventListener('connected', (e) => {
-                            sseConnected.value = true;
-                            console.log('SSE 连接已建立:', JSON.parse(e.data));
-                        });
-                        
-                        eventSource.value.addEventListener('modified', (e) => {
-                            const data = JSON.parse(e.data);
-                            console.log('配置已修改:', data);
+                        unlisten.value = await listen('config_modified', (event) => {
+                            const { path, new_version_hash, new_data } = event.payload;
                             
-                            // 检查 Hash 是否一致
-                            if (data.newVersionHash && data.newVersionHash !== localHash.value) {
-                                serverHash.value = data.newVersionHash;
+                            if (path === configPath.value && new_version_hash !== localHash.value) {
+                                serverHash.value = new_version_hash;
                                 showConflictToast.value = true;
                             }
                         });
-                        
-                        eventSource.value.addEventListener('error', (e) => {
-                            console.error('SSE 错误:', e);
-                            sseConnected.value = false;
-                        });
-                        
-                        eventSource.value.addEventListener('disconnected', () => {
-                            sseConnected.value = false;
-                        });
-                        
+                        isWatching.value = true;
                     } catch (err) {
-                        console.error('SSE 连接失败:', err);
-                        sseConnected.value = false;
+                        console.error('监听失败:', err);
+                        isWatching.value = false;
                     }
                 };
                 
-                // 关闭 Toast
+                const reloadConfig = async () => {
+                    showConflictToast.value = false;
+                    await loadConfig();
+                };
+                
                 const dismissToast = () => {
                     showConflictToast.value = false;
                 };
                 
-                // 刷新页面
-                const reloadPage = () => {
-                    window.location.reload();
-                };
-                
-                // 通知提示
-                const showNotification = (message, type = 'info') => {
-                    // 简单的通知实现，可以扩展为更复杂的通知系统
-                    console.log(`[${type}] ${message}`);
-                };
-                
-                // 生命周期
                 onMounted(() => {
                     loadConfig();
                 });
                 
-                onUnmounted(() => {
-                    if (eventSource.value) {
-                        eventSource.value.close();
-                    }
-                });
-                
                 return {
-                    // 状态
-                    configPath,
-                    schema,
-                    configData,
-                    originalData,
-                    versionHash,
-                    serverHash,
-                    localHash,
-                    lastModified,
-                    isLoading,
-                    isSaving,
-                    error,
-                    sseConnected,
-                    showConflictToast,
-                    hasChanges,
-                    
-                    // 方法
-                    formatDate,
-                    loadConfig,
-                    saveConfig,
-                    dismissToast,
-                    reloadPage
+                    configPath, schema, configData, originalData,
+                    versionHash, serverHash, localHash, lastModified,
+                    isLoading, isSaving, isWatching, error, showConflictToast, hasChanges,
+                    formatDate, loadConfig, saveConfig, reloadConfig, dismissToast
                 };
             }
         }).mount('#app');
