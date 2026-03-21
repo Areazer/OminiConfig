@@ -25,6 +25,8 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 
 from api.router import router, WORKSPACE_DIR
 
@@ -62,8 +64,16 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
-    # 注册路由
+    # 注册 API 路由
     app.include_router(router)
+
+    # 挂载静态文件目录
+    app.mount("/static", StaticFiles(directory="static"), name="static")
+
+    # 根路径返回前端页面
+    @app.get("/")
+    async def root():
+        return FileResponse("static/index.html")
 
     # 启动时确保工作目录存在
     WORKSPACE_DIR.mkdir(parents=True, exist_ok=True)
@@ -82,6 +92,7 @@ if __name__ == "__main__":
     print("🚀 OminiConfig Enterprise 启动中...")
     print("=" * 60)
     print(f"📁 工作目录: {WORKSPACE_DIR}")
+    print(f"🖥️  GUI 界面: http://localhost:8000")
     print(f"📖 API 文档: http://localhost:8000/docs")
     print(f"📚 备用文档: http://localhost:8000/redoc")
     print("=" * 60)
