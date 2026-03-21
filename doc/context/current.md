@@ -1,7 +1,7 @@
 # 当前项目上下文
 
-**最后更新**: 2026-03-21 11:30  
-**会话ID**: refactor-v2-complete
+**最后更新**: 2026-03-21 12:00  
+**会话ID**: add-gui-frontend
 
 ## 1. 项目概览
 
@@ -43,6 +43,22 @@
    - 【强制】文档更新规范
    - 【强制】代码质量规范
    - 【强制】会话上下文管理规范
+
+### ✅ 新增 GUI 前端 (2026-03-21)
+
+4. **Vue 3 + Tailwind CSS GUI 界面** 
+   - 单文件 index.html (零构建工具)
+   - 递归 SchemaForm 组件动态渲染表单
+   - 深色主题 + 树形结构引导线
+   - SSE 实时监听配置变更
+   - 防冲突 Toast 提示机制
+   - 支持对象、数组、基础类型编辑
+   - 位于 `static/index.html`
+
+5. **后端更新支持 GUI**
+   - main.py 添加静态文件服务
+   - 根路径 '/' 返回 GUI 页面
+   - 更新 README.md 添加 GUI 使用说明
 
 ### 🚧 进行中
 
@@ -182,10 +198,12 @@
 
 ## 8. 下次会话建议
 
-### 建议 1: 完善测试套件【高优先级】
-- 创建 tests/test_security.py 测试安全模块
-- 创建 tests/test_adapter.py 测试适配器模块
-- 创建 tests/test_router.py 测试 API 路由
+### 建议 1: 完善测试套件【进行中】
+- ✅ 创建 tests/test_gui.py 测试 GUI 相关功能
+- 待完成：
+  - tests/test_security.py 测试安全模块
+  - tests/test_adapter.py 测试适配器模块
+  - tests/test_router.py 测试 API 路由
 - 目标：达到 90%+ 覆盖率
 
 ### 建议 2: 编写开发指南【高优先级】
