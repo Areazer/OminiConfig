@@ -1850,6 +1850,7 @@ name = "omini-config"
 version = "2.0.0"
 dependencies = [
  "chrono",
+ "fastrand",
  "hex",
  "notify",
  "once_cell",
@@ -1857,6 +1858,7 @@ dependencies = [
  "serde_json",
  "sha2",
  "tauri",
+ "tempfile",
  "thiserror",
  "tokio",
  "tokio-test",

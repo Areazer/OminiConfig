@@ -153,7 +153,7 @@ pub fn get_file_meta(path: &Path) -> Result<FileMeta, ConfigError> {
     })
 }
 
-#[derive(Debug, Clone, serde::Serialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct FileMeta {
     pub version_hash: String,
     pub last_modified: f64,

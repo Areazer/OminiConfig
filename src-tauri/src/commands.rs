@@ -1,7 +1,6 @@
 use crate::utils::{self, ConfigError, FileMeta};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::path::Path;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ConfigData {

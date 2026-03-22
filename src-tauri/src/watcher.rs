@@ -1,7 +1,6 @@
 use crate::utils::{self, workspace_dir};
 use notify::{Config, Event, RecommendedWatcher, RecursiveMode, Watcher};
 use std::collections::HashMap;
-use std::path::Path;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tauri::Manager;
@@ -25,7 +24,7 @@ pub async fn start_watcher(app_handle: tauri::AppHandle) -> notify::Result<()> {
     // 确保工作目录存在
     if !workspace.exists() {
         std::fs::create_dir_all(&workspace)
-            .map_err(|e| notify::Error::generic(e.to_string()))?;
+            .map_err(|e| notify::Error::generic(&e.to_string()))?;
     }
     
     // 待处理事件映射 (路径 -> 事件信息)
