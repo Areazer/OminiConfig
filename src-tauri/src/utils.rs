@@ -1,8 +1,96 @@
-use std::path::{Path, PathBuf};
+use std::path::{Path, PathBuf, Component};
 use std::fs;
 use sha2::{Sha256, Digest};
 use thiserror::Error;
+use serde::Serialize;
 
+/// 错误码常量 - 必须稳定，前端依赖这些值
+pub const ERR_PATH_SECURITY: &str = "PATH_SECURITY_VIOLATION";
+pub const ERR_CONFIG_NOT_FOUND: &str = "CONFIG_NOT_FOUND";
+pub const ERR_INVALID_FORMAT: &str = "INVALID_CONFIG_FORMAT";
+pub const ERR_CONCURRENCY_CONFLICT: &str = "CONCURRENCY_CONFLICT";
+pub const ERR_IO_ERROR: &str = "IO_ERROR";
+pub const ERR_SERIALIZATION: &str = "SERIALIZATION_ERROR";
+pub const ERR_INTERNAL: &str = "INTERNAL_ERROR";
+
+/// 结构化命令错误 - 面向前端协议
+#[derive(Debug, Clone, Serialize)]
+pub struct CommandError {
+    pub code: String,
+    pub message: String,
+    pub details: Option<serde_json::Value>,
+}
+
+impl CommandError {
+    pub fn path_security(reason: &str) -> Self {
+        Self {
+            code: ERR_PATH_SECURITY.to_string(),
+            message: format!("路径安全违规: {}", reason),
+            details: None,
+        }
+    }
+
+    pub fn config_not_found(path: &str) -> Self {
+        Self {
+            code: ERR_CONFIG_NOT_FOUND.to_string(),
+            message: format!("配置文件不存在: {}", path),
+            details: Some(serde_json::json!({ "path": path })),
+        }
+    }
+
+    pub fn invalid_format(reason: &str) -> Self {
+        Self {
+            code: ERR_INVALID_FORMAT.to_string(),
+            message: format!("无效的配置格式: {}", reason),
+            details: None,
+        }
+    }
+
+    pub fn concurrency_conflict(expected: &str, actual: &str) -> Self {
+        Self {
+            code: ERR_CONCURRENCY_CONFLICT.to_string(),
+            message: "并发冲突: 版本哈希不匹配".to_string(),
+            details: Some(serde_json::json!({
+                "expected_hash": expected,
+                "actual_hash": actual,
+            })),
+        }
+    }
+
+    pub fn io_error(err: std::io::Error) -> Self {
+        Self {
+            code: ERR_IO_ERROR.to_string(),
+            message: format!("IO 错误: {}", err),
+            details: None,
+        }
+    }
+
+    pub fn serialization_error(err: serde_json::Error) -> Self {
+        Self {
+            code: ERR_SERIALIZATION.to_string(),
+            message: format!("序列化错误: {}", err),
+            details: None,
+        }
+    }
+
+    pub fn internal(message: &str) -> Self {
+        Self {
+            code: ERR_INTERNAL.to_string(),
+            message: message.to_string(),
+            details: None,
+        }
+    }
+}
+
+impl std::fmt::Display for CommandError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "[{}] {}", self.code, self.message)
+    }
+}
+
+impl std::error::Error for CommandError {}
+
+/// 内部错误类型（向后兼容，逐步迁移到 CommandError）
 #[derive(Error, Debug)]
 pub enum ConfigError {
     #[error("路径安全违规: {0}")]
@@ -24,7 +112,22 @@ pub enum ConfigError {
     SerializationError(#[from] serde_json::Error),
 }
 
+impl From<ConfigError> for CommandError {
+    fn from(err: ConfigError) -> Self {
+        match err {
+            ConfigError::PathSecurityViolation(msg) => CommandError::path_security(&msg),
+            ConfigError::ConfigNotFound(path) => CommandError::config_not_found(&path),
+            ConfigError::ConcurrencyConflict(exp, act) => CommandError::concurrency_conflict(&exp, &act),
+            ConfigError::InvalidConfigFormat(msg) => CommandError::invalid_format(&msg),
+            ConfigError::IoError(e) => CommandError::io_error(e),
+            ConfigError::SerializationError(e) => CommandError::serialization_error(e),
+        }
+    }
+}
+
 /// 工作目录 - 所有配置文件的根目录
+/// 使用当前工作目录下的 configs 文件夹作为工作区
+/// 注：在生产环境中应考虑使用 app data 目录而非 current_dir
 pub fn workspace_dir() -> PathBuf {
     std::env::current_dir()
         .unwrap_or_else(|_| PathBuf::from("."))
@@ -32,7 +135,15 @@ pub fn workspace_dir() -> PathBuf {
 }
 
 /// 验证路径安全性
-/// 禁止绝对路径和包含 .. 的路径穿越
+/// 基于 Path::components() 进行严格的组件级校验
+/// 
+/// 安全策略：
+/// 1. 拒绝 Prefix 组件（Windows 盘符如 C:）
+/// 2. 拒绝 RootDir 组件（Unix / 或 Windows \\）
+/// 3. 拒绝 ParentDir 组件（.. 路径穿越）
+/// 4. 忽略 CurDir 组件（. 当前目录）
+/// 5. 只允许 Normal 组件
+/// 6. 最终路径必须在 workspace 范围内
 pub fn validate_path(source_path: &str) -> Result<PathBuf, ConfigError> {
     // 检查空路径
     if source_path.is_empty() {
@@ -41,34 +152,92 @@ pub fn validate_path(source_path: &str) -> Result<PathBuf, ConfigError> {
         ));
     }
     
-    // 检查绝对路径
-    if Path::new(source_path).is_absolute() {
-        return Err(ConfigError::PathSecurityViolation(
-            format!("禁止使用绝对路径: {}", source_path)
-        ));
+    // 使用 Path::components() 进行组件级解析
+    // 这是核心改进：不再依赖 contains("..") 这种粗糙判断
+    let path = Path::new(source_path);
+    let mut has_normal = false;
+    
+    for component in path.components() {
+        match component {
+            // 1. 拒绝 Windows 盘符前缀（如 C:）
+            Component::Prefix(_) => {
+                return Err(ConfigError::PathSecurityViolation(
+                    "禁止使用带盘符前缀的路径".to_string()
+                ));
+            }
+            // 2. 拒绝根目录（Unix / 或 Windows \\）
+            Component::RootDir => {
+                return Err(ConfigError::PathSecurityViolation(
+                    "禁止使用绝对路径".to_string()
+                ));
+            }
+            // 3. 拒绝父目录引用（.. 路径穿越）
+            Component::ParentDir => {
+                return Err(ConfigError::PathSecurityViolation(
+                    "禁止路径穿越（包含 ..）".to_string()
+                ));
+            }
+            // 4. 忽略当前目录引用（.）
+            Component::CurDir => {
+                continue;
+            }
+            // 5. 允许普通路径组件
+            Component::Normal(_) => {
+                has_normal = true;
+            }
+        }
     }
     
-    // 检查路径穿越 (../)
-    if source_path.contains("..") {
+    // 确保路径中至少有一个普通组件
+    if !has_normal {
         return Err(ConfigError::PathSecurityViolation(
-            format!("检测到路径穿越: {}", source_path)
+            "路径无效：缺少文件名".to_string()
         ));
     }
     
     // 构建完整路径
-    let full_path = workspace_dir().join(source_path);
+    let full_path = workspace_dir().join(path);
     
-    // 规范化路径并验证仍在工作目录内
-    let canonical = full_path.canonicalize().unwrap_or(full_path.clone());
-    let workspace = workspace_dir().canonicalize().unwrap_or(workspace_dir());
+    // 边界检查：验证路径在工作目录范围内
+    // 关键改进：即使文件不存在，也要检查路径是否在安全范围内
+    // 通过人工拼接路径进行比较，避免 canonicalize 要求文件存在
+    let workspace = workspace_dir();
     
-    if !canonical.starts_with(&workspace) {
+    // 使用规范化路径进行比较
+    // 如果 canonicalize 失败（文件不存在），使用原始路径但附加安全检查
+    let (canonical_full, canonical_workspace) = match (full_path.canonicalize(), workspace.canonicalize()) {
+        (Ok(full), Ok(ws)) => (full, ws),
+        _ => {
+            // 文件不存在时的备选策略：
+            // 手动解析路径组件，移除所有 . 和冗余的 /
+            // 由于我们已经拒绝了 ..，所以可以直接使用清理后的路径
+            let cleaned_full = clean_path(&full_path);
+            let cleaned_ws = clean_path(&workspace);
+            (cleaned_full, cleaned_ws)
+        }
+    };
+    
+    // 严格边界检查：规范化后的路径必须在 workspace 内
+    if !canonical_full.starts_with(&canonical_workspace) {
         return Err(ConfigError::PathSecurityViolation(
             format!("路径超出工作目录范围: {}", source_path)
         ));
     }
     
     Ok(full_path)
+}
+
+/// 清理路径（移除 . 和冗余分隔符）
+/// 不处理 ..，因为前面已经拒绝
+fn clean_path(path: &Path) -> PathBuf {
+    let mut result = PathBuf::new();
+    for component in path.components() {
+        match component {
+            Component::Normal(name) => result.push(name),
+            _ => {} // 忽略其他组件（除 Normal 外，其他已被前面拒绝）
+        }
+    }
+    result
 }
 
 /// 计算文件的 SHA256 哈希

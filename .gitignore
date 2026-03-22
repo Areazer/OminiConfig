@@ -1,1 +1,7 @@
 AGENTS.md
+src-tauri/target/
+.DS_Store
+*.pyc
+__pycache__/
+.pytest_cache/
+.ruff_cache/

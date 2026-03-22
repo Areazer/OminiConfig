@@ -1,4 +1,4 @@
-use crate::utils::{self, ConfigError, FileMeta};
+use crate::utils::{self, CommandError, FileMeta};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -15,36 +15,32 @@ pub struct WriteRequest {
 }
 
 #[tauri::command]
-pub async fn read_config(path: String) -> Result<ConfigData, String> {
+pub async fn read_config(path: String) -> Result<ConfigData, CommandError> {
     let full_path = utils::validate_path(&path)
-        .map_err(|e| e.to_string())?;
-    
+        .map_err(CommandError::from)?;
+
     // 如果文件不存在，初始化空配置
     if !full_path.exists() {
         let empty_config = serde_json::json!({});
         let content = serde_json::to_string_pretty(&empty_config)
-            .map_err(|e| e.to_string())?;
-        
+            .map_err(CommandError::serialization_error)?;
+
         utils::atomic_write(&full_path, &content)
-            .map_err(|e| e.to_string())?;
+            .map_err(CommandError::from)?;
     }
-    
+
     // 读取文件内容
     let content = utils::read_file_content(&full_path)
-        .map_err(|e| e.to_string())?;
-    
+        .map_err(CommandError::from)?;
+
     // 解析 JSON
     let data: serde_json::Value = serde_json::from_str(&content)
-        .map_err(|e| {
-            ConfigError::InvalidConfigFormat(
-                format!("JSON 解析错误: {}", e)
-            ).to_string()
-        })?;
-    
+        .map_err(CommandError::serialization_error)?;
+
     // 获取元信息
     let meta = utils::get_file_meta(&full_path)
-        .map_err(|e| e.to_string())?;
-    
+        .map_err(CommandError::from)?;
+
     Ok(ConfigData { data, meta })
 }
 
@@ -53,65 +49,68 @@ pub async fn write_config(
     path: String,
     data: serde_json::Value,
     old_hash: String
-) -> Result<ConfigData, String> {
+) -> Result<ConfigData, CommandError> {
     let full_path = utils::validate_path(&path)
-        .map_err(|e| e.to_string())?;
-    
+        .map_err(CommandError::from)?;
+
     // 读取当前文件哈希进行乐观锁检查
     let current_hash = utils::compute_file_hash(&full_path)
-        .map_err(|e| e.to_string())?;
-    
+        .map_err(CommandError::from)?;
+
     // 检查乐观锁
     if current_hash != old_hash {
-        return Err(
-            ConfigError::ConcurrencyConflict(
-                old_hash,
-                current_hash
-            ).to_string()
-        );
+        return Err(CommandError::concurrency_conflict(&old_hash, &current_hash));
     }
-    
+
     // 序列化数据
     let content = serde_json::to_string_pretty(&data)
-        .map_err(|e| e.to_string())?;
-    
+        .map_err(CommandError::serialization_error)?;
+
     // 原子写入
     utils::atomic_write(&full_path, &content)
-        .map_err(|e| e.to_string())?;
-    
+        .map_err(CommandError::from)?;
+
     // 获取新的元信息
     let meta = utils::get_file_meta(&full_path)
-        .map_err(|e| e.to_string())?;
-    
+        .map_err(CommandError::from)?;
+
     Ok(ConfigData { data, meta })
 }
 
 #[tauri::command]
-pub async fn get_schema(path: String) -> Result<serde_json::Value, String> {
+pub async fn get_schema(path: String) -> Result<serde_json::Value, CommandError> {
     let full_path = utils::validate_path(&path)
-        .map_err(|e| e.to_string())?;
-    
+        .map_err(CommandError::from)?;
+
     // 如果文件不存在，先初始化
     if !full_path.exists() {
         let _ = read_config(path.clone()).await?;
     }
-    
+
     // 读取配置数据
     let content = utils::read_file_content(&full_path)
-        .map_err(|e| e.to_string())?;
-    
+        .map_err(CommandError::from)?;
+
     let data: serde_json::Value = serde_json::from_str(&content)
-        .map_err(|e| e.to_string())?;
-    
-    // 推导 Schema
-    let schema = derive_schema(&data,&full_path.display().to_string()
-    );
-    
+        .map_err(CommandError::serialization_error)?;
+
+    // 推导表单 Schema（不是完整 JSON Schema）
+    let schema = derive_form_schema(&data, &full_path.display().to_string());
+
     Ok(schema)
 }
 
-/// 递归推导 JSON Schema
-fn derive_schema(value: &serde_json::Value, id: &str) -> serde_json::Value {
+/// 递归推导表单 Schema
+/// 
+/// 注意：这不是完整的 JSON Schema，而是用于表单渲染的简化结构。
+/// 
+/// 当前实现的特点：
+/// 1. 数组类型只取第一个元素推导 items（简化策略）
+/// 2. 不自动推导 required 字段（已移除"非 null 就 required"逻辑）
+/// 3. 仅支持基本类型：null, boolean, number, string, array, object
+/// 
+/// 用于根据示例配置数据生成可编辑的表单界面。
+fn derive_form_schema(value: &serde_json::Value, id: &str) -> serde_json::Value {
     match value {
         serde_json::Value::Null => {
             serde_json::json!({
@@ -124,13 +123,16 @@ fn derive_schema(value: &serde_json::Value, id: &str) -> serde_json::Value {
             })
         }
         serde_json::Value::Number(n) => {
-            if n.is_i64() || n.is_u64() || n.is_f64() {
+            // 区分整数和浮点数，为前端展示预留空间
+            if n.is_i64() || n.is_u64() {
                 serde_json::json!({
-                    "type": "number"
+                    "type": "number",
+                    "format": "integer"
                 })
             } else {
                 serde_json::json!({
-                    "type": "number"
+                    "type": "number",
+                    "format": "float"
                 })
             }
         }
@@ -140,10 +142,12 @@ fn derive_schema(value: &serde_json::Value, id: &str) -> serde_json::Value {
             })
         }
         serde_json::Value::Array(arr) => {
+            // 简化策略：只取第一个元素推导 items 类型
+            // 这是启发式行为，不是严谨的类型推导
             let items_schema = if arr.is_empty() {
                 serde_json::json!({})
             } else {
-                derive_schema(&arr[0], &format!("{}/items", id))
+                derive_form_schema(&arr[0], &format!("{}/items", id))
             };
 
             serde_json::json!({
@@ -153,25 +157,20 @@ fn derive_schema(value: &serde_json::Value, id: &str) -> serde_json::Value {
         }
         serde_json::Value::Object(obj) => {
             let mut properties = HashMap::new();
-            let mut required = Vec::new();
 
             for (key, val) in obj {
-                let prop_schema = derive_schema(
+                let prop_schema = derive_form_schema(
                     val,
                     &format!("{}/properties/{}", id, key)
                 );
                 properties.insert(key.clone(), prop_schema);
-
-                // 非 null 值视为 required
-                if !val.is_null() {
-                    required.push(key.clone());
-                }
             }
 
+            // 不推导 required 字段
+            // 之前的"非 null 就 required"逻辑不合理，已移除
             serde_json::json!({
                 "type": "object",
-                "properties": properties,
-                "required": required
+                "properties": properties
             })
         }
     }
@@ -289,8 +288,13 @@ mod tests {
         ).await;
 
         assert!(result.is_err());
-        let error_msg = result.unwrap_err();
-        assert!(error_msg.contains("并发冲突") || error_msg.contains("ConcurrencyConflict"));
+        let err = result.unwrap_err();
+        assert_eq!(err.code, "CONCURRENCY_CONFLICT");
+        // 验证 details 包含 expected_hash 和 actual_hash
+        assert!(err.details.is_some());
+        let details = err.details.unwrap();
+        assert!(details.get("expected_hash").is_some());
+        assert!(details.get("actual_hash").is_some());
     }
 
     #[tokio::test]
@@ -305,7 +309,8 @@ mod tests {
         ).await;
 
         assert!(result.is_err());
-        assert!(result.unwrap_err().contains("路径"));
+        let err = result.unwrap_err();
+        assert_eq!(err.code, "PATH_SECURITY_VIOLATION");
     }
 
     #[tokio::test]
@@ -401,67 +406,64 @@ mod tests {
     }
 
     #[test]
-    fn test_derive_schema_null() {
+    fn test_derive_form_schema_null() {
         let value = serde_json::Value::Null;
-        let schema = derive_schema(&value, "test");
+        let schema = derive_form_schema(&value, "test");
         assert_eq!(schema["type"], "null");
     }
 
     #[test]
-    fn test_derive_schema_boolean() {
+    fn test_derive_form_schema_boolean() {
         let value = serde_json::json!(true);
-        let schema = derive_schema(&value, "test");
+        let schema = derive_form_schema(&value, "test");
         assert_eq!(schema["type"], "boolean");
     }
 
     #[test]
-    fn test_derive_schema_number() {
+    fn test_derive_form_schema_number() {
         let value = serde_json::json!(42);
-        let schema = derive_schema(&value, "test");
+        let schema = derive_form_schema(&value, "test");
         assert_eq!(schema["type"], "number");
     }
 
     #[test]
-    fn test_derive_schema_string() {
+    fn test_derive_form_schema_string() {
         let value = serde_json::json!("hello");
-        let schema = derive_schema(&value, "test");
+        let schema = derive_form_schema(&value, "test");
         assert_eq!(schema["type"], "string");
     }
 
     #[test]
-    fn test_derive_schema_empty_array() {
+    fn test_derive_form_schema_empty_array() {
         let value = serde_json::json!([]);
-        let schema = derive_schema(&value, "test");
+        let schema = derive_form_schema(&value, "test");
         assert_eq!(schema["type"], "array");
         assert!(schema["items"].as_object().unwrap().is_empty());
     }
 
     #[test]
-    fn test_derive_schema_array_with_items() {
+    fn test_derive_form_schema_array_with_items() {
         let value = serde_json::json!([1, 2, 3]);
-        let schema = derive_schema(&value, "test");
+        let schema = derive_form_schema(&value, "test");
         assert_eq!(schema["type"], "array");
         assert_eq!(schema["items"]["type"], "number");
     }
 
     #[test]
-    fn test_derive_schema_object_properties() {
+    fn test_derive_form_schema_object_properties() {
         let value = serde_json::json!({
             "name": "test",
             "count": 5,
             "enabled": true
         });
-        let schema = derive_schema(&value, "test");
+        let schema = derive_form_schema(&value, "test");
 
         assert_eq!(schema["type"], "object");
         assert!(schema["properties"]["name"]["type"] == "string");
         assert!(schema["properties"]["count"]["type"] == "number");
         assert!(schema["properties"]["enabled"]["type"] == "boolean");
 
-        // 所有非 null 字段都应该是 required
-        let required = schema["required"].as_array().unwrap();
-        assert!(required.contains(&serde_json::json!("name")));
-        assert!(required.contains(&serde_json::json!("count")));
-        assert!(required.contains(&serde_json::json!("enabled")));
+        // 不推导 required 字段，schema 中不应有 required 字段
+        assert!(schema.get("required").is_none());
     }
 }

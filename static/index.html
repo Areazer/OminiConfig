@@ -127,6 +127,35 @@
             </div>
         </transition>
         
+        <!-- Toast 通知栏（文件被删除提示） -->
+        <transition name="toast">
+            <div v-if="showRemovedToast" class="fixed top-20 left-1/2 transform -translate-x-1/2 z-50 w-full max-w-2xl px-4">
+                <div class="bg-red-500/10 border border-red-500/30 backdrop-blur-sm rounded-lg p-4 shadow-2xl">
+                    <div class="flex items-start space-x-3">
+                        <div class="flex-shrink-0">
+                            <svg class="w-6 h-6 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+                            </svg>
+                        </div>
+                        <div class="flex-1">
+                            <h3 class="text-red-400 font-semibold mb-1">配置文件已被删除</h3>
+                            <p class="text-red-200/80 text-sm mb-3">
+                                配置文件已被外部程序删除。如果您想继续编辑，系统将在保存时重新创建。
+                            </p>
+                            <div class="flex items-center space-x-3">
+                                <button 
+                                    @click="dismissRemovedToast"
+                                    class="px-4 py-2 bg-red-600 hover:bg-red-500 text-white text-sm rounded-lg font-medium transition-colors"
+                                >
+                                    知道了
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </transition>
+        
         <!-- 顶部导航栏 -->
         <header class="bg-slate-900 border-b border-slate-800 sticky top-0 z-40">
             <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -324,7 +353,6 @@
                                 </span>
                                 <label class="text-sm font-medium text-slate-300">
                                     {{ key }}
-                                    <span v-if="schema.required?.includes(key)" class="text-red-400">*</span>
                                 </label>
                             </div>
                             <schema-form :schema="propSchema" v-model="value[key]"></schema-form>
@@ -445,26 +473,31 @@
                         originalData.value = JSON.parse(JSON.stringify(configData.value));
                         lastModified.value = result.meta.last_modified;
                     } catch (err) {
-                        const errorMsg = err.message || err.toString() || '保存失败';
-                        
-                        // CRITICAL: 检测并发冲突并显示 Toast
-                        if (errorMsg.includes('ConcurrencyConflict') || 
-                            errorMsg.includes('版本哈希不匹配') ||
-                            errorMsg.includes('version hash')) {
-                            // 从错误消息中提取服务器 hash
-                            const match = errorMsg.match(/实际[:：]\s*([a-f0-9]{8,})/i);
-                            if (match) {
-                                serverHash.value = match[1];
+                        // 新协议：按 code 处理错误，不再字符串匹配
+                        if (err.code === 'CONCURRENCY_CONFLICT') {
+                            // 从 details 获取 expected/actual hash
+                            if (err.details) {
+                                serverHash.value = err.details.actual_hash;
                             }
                             showConflictToast.value = true;
                             error.value = '配置已被外部程序修改，请刷新后重试';
+                        } else if (err.code === 'PATH_SECURITY_VIOLATION') {
+                            error.value = '路径不安全：' + (err.message || '路径违规');
+                        } else if (err.code === 'INVALID_CONFIG_FORMAT') {
+                            error.value = '配置格式错误：' + (err.message || '格式无效');
+                        } else if (err.code === 'CONFIG_NOT_FOUND') {
+                            error.value = '配置文件不存在：' + (err.message || '文件未找到');
+                        } else if (err.code === 'IO_ERROR') {
+                            error.value = 'IO 错误：' + (err.message || '文件操作失败');
                         } else {
-                            error.value = errorMsg;
+                            error.value = err.message || '保存失败';
                         }
                     } finally {
                         isSaving.value = false;
                     }
                 };
+                
+                const showRemovedToast = ref(false);
                 
                 const setupWatcher = async () => {
                     if (unlisten.value) {
@@ -473,12 +506,27 @@
                     }
                     
                     try {
-                        unlisten.value = await listen('config_modified', (event) => {
-                            const { path, new_version_hash, new_data } = event.payload;
+                        // 新协议：按事件类型处理
+                        unlisten.value = await listen('config_changed', (event) => {
+                            const { kind, path, version_hash } = event.payload;
                             
-                            if (path === configPath.value && new_version_hash !== localHash.value) {
-                                serverHash.value = new_version_hash;
-                                showConflictToast.value = true;
+                            if (path !== configPath.value) return;
+                            
+                            switch (kind) {
+                                case 'modified':
+                                case 'created':
+                                case 'renamed':
+                                    // 文件被修改/创建/重命名
+                                    if (version_hash && version_hash !== localHash.value) {
+                                        serverHash.value = version_hash;
+                                        showConflictToast.value = true;
+                                    }
+                                    break;
+                                case 'removed':
+                                    // 文件被删除
+                                    showRemovedToast.value = true;
+                                    showConflictToast.value = false;
+                                    break;
                             }
                         });
                         isWatching.value = true;
@@ -490,11 +538,16 @@
                 
                 const reloadConfig = async () => {
                     showConflictToast.value = false;
+                    showRemovedToast.value = false;
                     await loadConfig();
                 };
                 
                 const dismissToast = () => {
                     showConflictToast.value = false;
+                };
+                
+                const dismissRemovedToast = () => {
+                    showRemovedToast.value = false;
                 };
                 
                 onMounted(() => {
@@ -504,8 +557,8 @@
                 return {
                     configPath, schema, configData, originalData,
                     versionHash, serverHash, localHash, lastModified,
-                    isLoading, isSaving, isWatching, error, showConflictToast, hasChanges,
-                    formatDate, loadConfig, saveConfig, reloadConfig, dismissToast
+                    isLoading, isSaving, isWatching, error, showConflictToast, showRemovedToast, hasChanges,
+                    formatDate, loadConfig, saveConfig, reloadConfig, dismissToast, dismissRemovedToast
                 };
             }
         }).mount('#app');
