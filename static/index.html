@@ -454,6 +454,12 @@
                         if (Object.keys(configRes.data || {}).length === 0) {
                             error.value = '提示：这是新配置文件，点击"保存"按钮创建默认配置';
                         }
+                        
+                        // 第五步：标记首次加载完成，之后才开始处理 watcher 事件
+                        setTimeout(() => {
+                            isInitialLoad.value = false;
+                            console.log('首次加载完成，开始监听文件变化');
+                        }, 1000);
                     } catch (err) {
                         // 新协议：按 code 处理错误
                         if (err.code === 'PATH_SECURITY_VIOLATION') {
@@ -519,6 +525,7 @@
                 };
                 
                 const showRemovedToast = ref(false);
+                const isInitialLoad = ref(true);
                 
                 const setupWatcher = async () => {
                     if (unlisten.value) {
@@ -533,6 +540,12 @@
                             
                             if (path !== configPath.value) return;
                             
+                            // 首次加载期间忽略所有事件，避免误报
+                            if (isInitialLoad.value) {
+                                console.log('首次加载期间忽略事件:', kind);
+                                return;
+                            }
+                            
                             switch (kind) {
                                 case 'modified':
                                 case 'created':
@@ -545,11 +558,8 @@
                                     break;
                                 case 'removed':
                                     // 文件被删除
-                                    // 忽略首次加载时的误报（可能是文件创建过程中的临时状态）
-                                    if (versionHash.value && versionHash.value !== '') {
-                                        showRemovedToast.value = true;
-                                        showConflictToast.value = false;
-                                    }
+                                    showRemovedToast.value = true;
+                                    showConflictToast.value = false;
                                     break;
                             }
                         });
