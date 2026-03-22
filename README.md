@@ -265,6 +265,489 @@ cd OminiConfig/src-tauri/target/release
 
 ---
 
+## 🔌 集成到其他项目（开发者指南）
+
+> 想把 OminiConfig 当作配置管理工具集成到你的项目中？这份指南教你一步步操作。
+
+### 适用场景
+
+- **桌面应用**：需要让用户可视化编辑配置文件
+- **开发工具**：管理项目配置、环境变量、数据库连接等
+- **游戏/工具配置**：让用户自定义参数而不用手动改 JSON
+- **团队协作**：统一配置文件格式，降低编辑出错概率
+
+---
+
+### 第一步：确定工作目录
+
+OminiConfig 需要一个**工作目录**来存放所有配置文件。
+
+**推荐方案**：在你的项目根目录创建 `configs/` 文件夹
+
+```
+你的项目/
+├── src/                    ← 你的源代码
+├── package.json           ← 你的项目配置
+├── configs/               ← ✅ OminiConfig 工作目录
+│   ├── app/
+│   │   └── settings.json
+│   └── database/
+│       └── connection.json
+└── omini-config           ← OminiConfig 可执行文件（可以放在这里）
+```
+
+---
+
+### 第二步：启动 OminiConfig 指向你的项目
+
+**方式 A：快捷启动脚本（推荐）**
+
+在你的项目根目录创建启动脚本：
+
+**macOS/Linux (`start-config.sh`)：**
+```bash
+#!/bin/bash
+# 获取脚本所在目录
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# 启动 OminiConfig，工作目录设为当前目录
+cd "$SCRIPT_DIR" && ./omini-config
+```
+
+**Windows (`start-config.bat`)：**
+```batch
+@echo off
+:: 切换到脚本所在目录
+cd /d "%~dp0"
+
+:: 启动 OminiConfig
+start omini-config.exe
+```
+
+**使用：**
+```bash
+# macOS/Linux
+chmod +x start-config.sh
+./start-config.sh
+
+# Windows
+双击 start-config.bat
+```
+
+**方式 B：Makefile 集成**
+
+```makefile
+.PHONY: config config-build
+
+# 启动配置编辑器
+config:
+	./omini-config
+
+# 构建并启动（如果源码有更新）
+config-build:
+	cd src-tauri && cargo build --release
+	cp src-tauri/target/release/omini-config ./omini-config
+	./omini-config
+```
+
+**使用：**
+```bash
+make config        # 直接启动
+make config-build  # 重新构建后启动
+```
+
+**方式 C：Node.js 项目集成**
+
+在你的 `package.json` 中添加：
+
+```json
+{
+  "scripts": {
+    "config": "./omini-config",
+    "config:dev": "cd src-tauri && cargo tauri dev",
+    "postinstall": "node scripts/download-omini-config.js"
+  }
+}
+```
+
+然后创建 `scripts/download-omini-config.js`：
+
+```javascript
+// 自动下载对应平台的 OminiConfig 二进制文件
+const fs = require('fs');
+const https = require('https');
+const path = require('path');
+
+const platform = process.platform;
+const binaryName = platform === 'win32' ? 'omini-config.exe' : 'omini-config';
+const downloadUrl = `https://github.com/Areazer/OminiConfig/releases/latest/download/${binaryName}`;
+
+if (!fs.existsSync(binaryName)) {
+  console.log(`Downloading OminiConfig for ${platform}...`);
+  const file = fs.createWriteStream(binaryName);
+  https.get(downloadUrl, (response) => {
+    response.pipe(file);
+    file.on('finish', () => {
+      file.close();
+      fs.chmodSync(binaryName, 0o755); // 赋予执行权限
+      console.log('Download complete!');
+    });
+  });
+}
+```
+
+**使用：**
+```bash
+npm run config      # 启动配置编辑器
+npm install         # 自动下载 OminiConfig
+```
+
+---
+
+### 第三步：在代码中读取配置
+
+OminiConfig 只是帮你编辑配置文件，**读取配置还是需要你的代码自己实现**。
+
+**Python 项目示例：**
+
+```python
+import json
+import os
+
+CONFIG_DIR = os.path.join(os.path.dirname(__file__), '..', 'configs')
+
+def load_config(path):
+    """加载配置文件"""
+    full_path = os.path.join(CONFIG_DIR, path)
+    try:
+        with open(full_path, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    except FileNotFoundError:
+        # 如果文件不存在，返回默认配置
+        return get_default_config(path)
+    except json.JSONDecodeError as e:
+        print(f"配置格式错误: {e}")
+        return None
+
+def get_default_config(path):
+    """获取默认配置"""
+    defaults = {
+        'app/settings.json': {
+            'app_name': 'My App',
+            'debug': False,
+            'port': 8080
+        },
+        'database/config.json': {
+            'host': 'localhost',
+            'port': 5432,
+            'database': 'myapp'
+        }
+    }
+    return defaults.get(path, {})
+
+# 使用示例
+settings = load_config('app/settings.json')
+print(f"App name: {settings['app_name']}")
+print(f"Port: {settings['port']}")
+```
+
+**Node.js 项目示例：**
+
+```javascript
+const fs = require('fs');
+const path = require('path');
+
+const CONFIG_DIR = path.join(__dirname, '..', 'configs');
+
+function loadConfig(configPath) {
+    const fullPath = path.join(CONFIG_DIR, configPath);
+    try {
+        const data = fs.readFileSync(fullPath, 'utf8');
+        return JSON.parse(data);
+    } catch (err) {
+        if (err.code === 'ENOENT') {
+            // 文件不存在，返回默认配置
+            return getDefaultConfig(configPath);
+        }
+        console.error('配置加载失败:', err);
+        return null;
+    }
+}
+
+function getDefaultConfig(configPath) {
+    const defaults = {
+        'app/settings.json': {
+            app_name: 'My App',
+            debug: false,
+            port: 8080
+        }
+    };
+    return defaults[configPath] || {};
+}
+
+// 使用示例
+const settings = loadConfig('app/settings.json');
+console.log(`App name: ${settings.app_name}`);
+```
+
+**Rust 项目示例：**
+
+```rust
+use serde::{Deserialize, Serialize};
+use std::fs;
+use std::path::PathBuf;
+
+#[derive(Debug, Serialize, Deserialize)]
+struct AppConfig {
+    app_name: String,
+    debug: bool,
+    port: u16,
+}
+
+fn load_config(config_dir: &str, path: &str) -> Result<AppConfig, Box<dyn std::error::Error>> {
+    let full_path = PathBuf::from(config_dir).join(path);
+    let content = fs::read_to_string(full_path)?;
+    let config: AppConfig = serde_json::from_str(&content)?;
+    Ok(config)
+}
+
+// 使用示例
+fn main() {
+    let config = load_config("./configs", "app/settings.json")
+        .expect("Failed to load config");
+    println!("App name: {}", config.app_name);
+}
+```
+
+---
+
+### 第四步：配置文件约定
+
+为了让 OminiConfig 的表单渲染效果更好，建议遵循以下约定：
+
+**✅ 推荐写法：**
+
+```json
+{
+  "app_name": "My Application",
+  "version": "1.0.0",
+  "debug_mode": false,
+  "port": 8080,
+  "features": {
+    "enable_auth": true,
+    "max_connections": 100
+  },
+  "database": {
+    "host": "localhost",
+    "port": 5432,
+    "ssl": false
+  }
+}
+```
+
+**表单渲染效果：**
+- ✅ 基础类型（string/boolean/number）会渲染为对应的表单控件
+- ✅ 嵌套对象可展开折叠
+- ✅ 数组会显示为列表（但只支持简单编辑）
+
+**⚠️ 注意事项：**
+
+1. **避免过深的嵌套**：建议不超过 3 层
+2. **数组限制**：数组只取第一个元素推导类型，复杂数组结构可能显示不完美
+3. **注释**：JSON 不支持注释，如需说明请使用 `_description` 字段：
+   ```json
+   {
+     "_description": "这是应用主配置",
+     "app_name": "My App"
+   }
+   ```
+
+---
+
+### 第五步：多环境配置管理
+
+**场景**：开发环境、测试环境、生产环境使用不同配置
+
+**推荐方案：**
+
+```
+configs/
+├── common/
+│   └── base.json          ← 通用配置
+├── development/
+│   └── overrides.json     ← 开发环境覆盖
+├── production/
+│   └── overrides.json     ← 生产环境覆盖
+└── local/
+    └── overrides.json     ← 本地覆盖（不提交到 Git）
+```
+
+**配置合并逻辑（以 Node.js 为例）：**
+
+```javascript
+function loadEnvConfig(environment) {
+    const base = loadConfig('common/base.json');
+    const override = loadConfig(`${environment}/overrides.json`);
+    
+    // 深度合并
+    return deepMerge(base, override);
+}
+
+// 使用
+const env = process.env.NODE_ENV || 'development';
+const config = loadEnvConfig(env);
+```
+
+---
+
+### 完整示例项目结构
+
+```
+my-awesome-app/
+├── src/                          ← 源代码
+│   ├── main.py                  ← 主程序
+│   └── config_loader.py         ← 配置加载器
+├── configs/                      ← ✅ OminiConfig 工作目录
+│   ├── app/
+│   │   └── settings.json        ← 应用配置
+│   ├── database/
+│   │   └── connection.json      ← 数据库配置
+│   └── logging/
+│       └── config.json          ← 日志配置
+├── omini-config                  ← OminiConfig 可执行文件
+├── start-config.sh              ← 启动脚本
+├── package.json                 ← Node.js 项目配置
+├── requirements.txt             ← Python 依赖
+└── README.md                    ← 你的项目说明
+```
+
+**使用流程：**
+
+1. **开发时**：
+   ```bash
+   ./start-config.sh              # 启动 OminiConfig 编辑配置
+   # 编辑 configs/app/settings.json
+   # 保存后关闭
+   
+   python src/main.py             # 运行你的程序，自动读取最新配置
+   ```
+
+2. **部署时**：
+   ```bash
+   # 配置已保存在 configs/ 目录，随项目一起部署
+   # 生产环境可以通过环境变量指定覆盖配置
+   NODE_ENV=production npm start
+   ```
+
+---
+
+### 文件分发指南（重要！）
+
+**问题**：`target` 目录有 2GB+，难道要全部复制？
+
+**答案**：**不需要！** 你只需要一个 2.3MB 的文件。
+
+#### target 目录结构解析
+
+```
+src-tauri/target/
+├── release/
+│   ├── omini-config          ← ✅ 只需要这个（2.3MB）
+│   ├── deps/                 ← ❌ 编译依赖（653MB，不需要）
+│   ├── build/                ← ❌ 构建产物（59MB，不需要）
+│   ├── bundle/               ← ❌ 安装包（如需要可保留）
+│   └── ...                   ← ❌ 其他都是中间文件
+└── debug/                    ← ❌ 调试版本（不需要）
+```
+
+#### 应该复制哪些文件？
+
+**场景 A：集成到其他项目（推荐）**
+
+复制这 **1 个文件** 即可：
+```bash
+# 从 OminiConfig 项目
+src-tauri/target/release/omini-config       # macOS/Linux（2.3MB）
+src-tauri/target/release/omini-config.exe   # Windows（约 2.5MB）
+```
+
+**集成步骤**：
+```bash
+# 1. 复制可执行文件到你的项目
+cp /path/to/omini-config ./my-project/omini-config
+
+# 2. 在你的项目创建 configs 目录
+mkdir -p ./my-project/configs
+
+# 3. 完成！现在可以运行了
+cd ./my-project && ./omini-config
+```
+
+**场景 B：创建发布包**
+
+如果需要分发给最终用户，可以打包：
+```
+my-app-config-tool.zip
+├── omini-config              ← 可执行文件
+├── configs/                  ← 默认配置目录（可选）
+│   └── app/
+│       └── default.json      ← 默认配置
+├── start-config.sh           ← 启动脚本（macOS/Linux）
+├── start-config.bat          ← 启动脚本（Windows）
+└── README.txt                ← 使用说明
+```
+
+**文件大小对比**：
+| 方案 | 大小 | 说明 |
+|------|------|------|
+| 完整 target 目录 | 2.1 GB | ❌ 包含所有编译中间文件 |
+| release 目录 | 720 MB | ❌ 仍包含 deps、build 等 |
+| 仅 omini-config | 2.3 MB | ✅ 推荐，单文件即可运行 |
+| 完整安装包 | 3-5 MB | ✅ 包含脚本和默认配置 |
+
+#### 常见问题
+
+**Q: 删除 target 目录后还能运行吗？**
+```bash
+# 可以！omini-config 是独立可执行文件
+rm -rf src-tauri/target/      # 删除整个 target 目录
+./omini-config                # 仍然可以正常运行
+```
+
+**Q: 如何获取其他平台的二进制文件？**
+```bash
+# 方法 1：从 GitHub Releases 下载
+curl -L -o omini-config https://github.com/Areazer/OminiConfig/releases/latest/download/omini-config
+chmod +x omini-config
+
+# 方法 2：交叉编译（需要 Rust）
+rustup target add x86_64-pc-windows-msvc
+cargo build --release --target x86_64-pc-windows-msvc
+```
+
+**Q: 可以将 omini-config 放入 PATH 吗？**
+```bash
+# 可以！这样可以在任何地方使用
+sudo cp omini-config /usr/local/bin/
+omini-config --help
+```
+
+---
+
+### 集成检查清单
+
+在你的项目中集成 OminiConfig 时，确认以下事项：
+
+- [ ] 已创建 `configs/` 工作目录
+- [ ] 已将 `omini-config` 可执行文件放入项目目录（**只需这一个 2.3MB 文件**）
+- [ ] **已删除或忽略 `target/` 目录**（不需要 2GB+ 的编译文件）
+- [ ] 已编写配置加载代码（参考上面的示例）
+- [ ] 已添加启动脚本（.sh/.bat/Makefile）
+- [ ] 已在 README 中说明如何使用 OminiConfig 编辑配置
+- [ ] 已将 `configs/` 添加到 `.gitignore`（如果是本地配置）或纳入版本控制（如果是默认配置）
+
+---
+
 ## ✨ 核心特性
 
 - **原生性能**: Rust 二进制，毫秒级启动，相比 Python 版本更低的运行时负担，基于 notify 的文件监听。
