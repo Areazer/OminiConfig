@@ -33,9 +33,9 @@ pub async fn read_config(path: String) -> Result<ConfigData, CommandError> {
     let content = utils::read_file_content(&full_path)
         .map_err(CommandError::from)?;
 
-    // 解析 JSON
+    // 解析 JSON（用户配置文件的解析失败映射为 INVALID_CONFIG_FORMAT）
     let data: serde_json::Value = serde_json::from_str(&content)
-        .map_err(CommandError::serialization_error)?;
+        .map_err(|e| CommandError::invalid_config_format(&e.to_string()))?;
 
     // 获取元信息
     let meta = utils::get_file_meta(&full_path)
@@ -92,7 +92,7 @@ pub async fn get_schema(path: String) -> Result<serde_json::Value, CommandError>
         .map_err(CommandError::from)?;
 
     let data: serde_json::Value = serde_json::from_str(&content)
-        .map_err(CommandError::serialization_error)?;
+        .map_err(|e| CommandError::invalid_config_format(&e.to_string()))?;
 
     // 推导表单 Schema（不是完整 JSON Schema）
     let schema = derive_form_schema(&data, &full_path.display().to_string());
@@ -182,22 +182,37 @@ mod tests {
     use tempfile::TempDir;
     use serial_test::serial;
 
-    // 为测试设置临时工作目录
-    fn setup_test_workspace() -> TempDir {
-        let temp_dir = TempDir::new().unwrap();
-        // 设置当前目录为临时目录
-        std::env::set_current_dir(&temp_dir).unwrap();
-        // 创建工作目录 configs（workspace_dir() 会返回 temp_dir/configs）
-        let workspace = utils::workspace_dir();
-        std::fs::create_dir_all(&workspace).unwrap();
-        temp_dir
+    /// 工作目录 Guard，测试结束后自动恢复原目录
+    struct WorkingDirGuard {
+        original_dir: std::path::PathBuf,
+        _temp_dir: TempDir,
+    }
+
+    impl WorkingDirGuard {
+        fn new() -> Self {
+            let original_dir = std::env::current_dir().unwrap();
+            let temp_dir = TempDir::new().unwrap();
+            std::env::set_current_dir(&temp_dir).unwrap();
+            
+            // 创建工作目录 configs
+            let workspace = utils::workspace_dir();
+            std::fs::create_dir_all(&workspace).unwrap();
+            
+            Self { original_dir, _temp_dir: temp_dir }
+        }
+    }
+
+    impl Drop for WorkingDirGuard {
+        fn drop(&mut self) {
+            // 测试结束后恢复原工作目录
+            let _ = std::env::set_current_dir(&self.original_dir);
+        }
     }
 
     #[tokio::test]
     #[serial]
-    #[serial]
     async fn test_read_config_creates_empty_if_not_exists() {
-        let _temp = setup_test_workspace();
+        let _guard = WorkingDirGuard::new();
 
         // 读取不存在的配置
         let result = read_config("test/new_config.json".to_string()).await;
@@ -213,9 +228,8 @@ mod tests {
 
     #[tokio::test]
     #[serial]
-    #[serial]
     async fn test_read_config_returns_existing_data() {
-        let _temp = setup_test_workspace();
+        let _guard = WorkingDirGuard::new();
 
         // 先写入一些数据
         let test_data = serde_json::json!({"name": "test", "value": 42});
@@ -236,9 +250,8 @@ mod tests {
 
     #[tokio::test]
     #[serial]
-    #[serial]
     async fn test_write_config_success() {
-        let _temp = setup_test_workspace();
+        let _guard = WorkingDirGuard::new();
 
         // 先创建空文件获取初始哈希
         let initial_result = read_config("write_test.json".to_string()).await.unwrap();
@@ -263,7 +276,7 @@ mod tests {
     #[tokio::test]
     #[serial]
     async fn test_write_config_concurrency_conflict() {
-        let _temp = setup_test_workspace();
+        let _guard = WorkingDirGuard::new();
 
         // 先创建文件并获取初始哈希
         let initial_result = read_config("conflict_test.json".to_string()).await.unwrap();
@@ -300,7 +313,7 @@ mod tests {
     #[tokio::test]
     #[serial]
     async fn test_write_config_invalid_path() {
-        let _temp = setup_test_workspace();
+        let _guard = WorkingDirGuard::new();
 
         let result = write_config(
             "../etc/passwd".to_string(),
@@ -316,7 +329,7 @@ mod tests {
     #[tokio::test]
     #[serial]
     async fn test_get_schema_for_simple_types() {
-        let _temp = setup_test_workspace();
+        let _guard = WorkingDirGuard::new();
 
         // 创建包含各种类型数据的配置
         let data = serde_json::json!({
@@ -348,7 +361,7 @@ mod tests {
     #[tokio::test]
     #[serial]
     async fn test_get_schema_for_nested_objects() {
-        let _temp = setup_test_workspace();
+        let _guard = WorkingDirGuard::new();
 
         let data = serde_json::json!({
             "app": {
@@ -380,7 +393,7 @@ mod tests {
     #[tokio::test]
     #[serial]
     async fn test_get_schema_for_arrays() {
-        let _temp = setup_test_workspace();
+        let _guard = WorkingDirGuard::new();
 
         let data = serde_json::json!({
             "items": ["a", "b", "c"],

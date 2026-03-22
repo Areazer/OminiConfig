@@ -450,7 +450,20 @@
                         
                         setupWatcher();
                     } catch (err) {
-                        error.value = err.message || '加载失败';
+                        // 新协议：按 code 处理错误
+                        if (err.code === 'PATH_SECURITY_VIOLATION') {
+                            error.value = '路径不安全：' + (err.message || '路径违规');
+                        } else if (err.code === 'INVALID_CONFIG_FORMAT') {
+                            error.value = '配置格式错误：' + (err.message || '格式无效');
+                        } else if (err.code === 'CONFIG_NOT_FOUND') {
+                            error.value = '配置文件不存在：' + (err.message || '文件未找到');
+                        } else if (err.code === 'IO_ERROR') {
+                            error.value = 'IO 错误：' + (err.message || '文件操作失败');
+                        } else if (err.code === 'SERIALIZATION_ERROR') {
+                            error.value = '数据序列化错误：' + (err.message || '请检查配置数据');
+                        } else {
+                            error.value = err.message || '加载失败';
+                        }
                     } finally {
                         isLoading.value = false;
                     }
@@ -489,8 +502,11 @@
                             error.value = '配置文件不存在：' + (err.message || '文件未找到');
                         } else if (err.code === 'IO_ERROR') {
                             error.value = 'IO 错误：' + (err.message || '文件操作失败');
+                        } else if (err.code === 'SERIALIZATION_ERROR') {
+                            error.value = '数据序列化错误：' + (err.message || '请检查配置数据');
                         } else {
-                            error.value = err.message || '保存失败';
+                            // 兜底：未明确处理的错误码仍按 code 显示，保持协议一致性
+                            error.value = `[${err.code}] ${err.message || '操作失败'}`;
                         }
                     } finally {
                         isSaving.value = false;

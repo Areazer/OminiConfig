@@ -73,6 +73,15 @@ impl CommandError {
         }
     }
 
+    /// 用于用户配置文件 JSON 解析失败（INVALID_CONFIG_FORMAT）
+    pub fn invalid_config_format(reason: &str) -> Self {
+        Self {
+            code: ERR_INVALID_FORMAT.to_string(),
+            message: format!("无效的配置格式: {}", reason),
+            details: None,
+        }
+    }
+
     pub fn internal(message: &str) -> Self {
         Self {
             code: ERR_INTERNAL.to_string(),
@@ -352,12 +361,17 @@ mod tests {
     #[test]
     #[serial]
     fn test_validate_path_accepts_relative() {
+        // 保存原工作目录
+        let original_dir = std::env::current_dir().unwrap();
         let temp_dir = TempDir::new().unwrap();
         std::env::set_current_dir(&temp_dir).unwrap();
         std::fs::create_dir_all(workspace_dir()).unwrap();
 
         let result = validate_path("app/config.json");
         assert!(result.is_ok());
+
+        // 恢复原工作目录
+        std::env::set_current_dir(original_dir).unwrap();
     }
 
     #[test]

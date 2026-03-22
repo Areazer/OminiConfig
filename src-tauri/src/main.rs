@@ -22,10 +22,12 @@ fn main() {
             let app_handle = app.handle();
             let workspace = utils::workspace_dir();
             
-            // 创建文件监听器
-            // 新的架构：FileWatcher 返回持有者，由 app state 保持存活
-            // 不再需要无限 sleep 保活
-            let watcher = std::thread::spawn(move || {
+            // 启动文件监听器
+            // 设计：在独立线程中创建 Tokio runtime 并运行异步 watcher
+            // FileWatcher 结构体持有 notify Watcher，确保其不被 drop
+            // 通过 WatcherState 存入 Tauri app state，由主进程保持生命周期
+            // 优势：无需无限 sleep 保活，结构清晰，错误可传递
+            let watcher_thread = std::thread::spawn(move || {
                 let rt = tokio::runtime::Runtime::new().unwrap();
                 rt.block_on(async {
                     match watcher::FileWatcher::new(
@@ -56,11 +58,13 @@ fn main() {
                 })
             });
             
-            // 等待 watcher 初始化完成
-            let watcher = watcher.join().expect("watcher 线程启动失败");
+            // 等待 watcher 初始化完成并获取持有者
+            // 如果 watcher 启动失败，此处会 panic 并阻止应用继续启动
+            let watcher_handle = watcher_thread.join().expect("watcher 线程启动失败");
             
-            // 将 watcher 存入 app state，保持其生命周期
-            app.manage(WatcherState { _watcher: watcher });
+            // 将 watcher 存入 Tauri state，由应用生命周期管理
+            // FileWatcher 的 Drop 实现确保资源正确释放
+            app.manage(WatcherState { _watcher: watcher_handle });
             
             Ok(())
         })

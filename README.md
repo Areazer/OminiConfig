@@ -8,7 +8,7 @@ OminiConfig V2.0 是从 Web 服务到原生应用的迁移版本，采用 **Rust
 
 ## ✨ 核心特性
 
-- **原生性能**: 毫秒级冷启动，体积 < 5MB，基于 notify 的文件监听。
+- **原生性能**: Rust 二进制，毫秒级启动，相比 Python 版本更低的运行时负担，基于 notify 的文件监听。
 - **基础安全**: 基于 `Path::components()` 的路径校验，拦截绝对路径和路径穿越。
 - **实时更新**: Tauri IPC 事件推送，500ms 防抖聚合，UI 冲突提示。
 - **表单渲染**: 基于示例数据推导简化表单结构，支持深色模式树形编辑。
@@ -48,9 +48,9 @@ cargo tauri build
 
 | 特性 | V1.1 (Python) | V2.0 (Rust) | 说明 |
 |------|---------------|-------------|------|
-| **启动速度** | 2-3 秒 | < 100ms | 原生二进制 |
-| **内存占用** | 50-100MB | < 20MB | 无 Python 运行时 |
-| **打包体积** | ~50MB | < 5MB | 精简依赖 |
+| **启动速度** | 2-3 秒 | 更快 | 原生二进制，无运行时负担 |
+| **内存占用** | 较高 | 更低 | 无 Python 运行时 |
+| **打包体积** | ~50MB (含 Python) | 更小 | 精简依赖，单一二进制 |
 | **通信协议** | HTTP + SSE | Tauri IPC | 原生进程通信 |
 | **文件监听** | Python watchdog | Rust notify | 跨平台监听 |
 
@@ -92,6 +92,11 @@ cargo tauri build
 
 SHA256 哈希校验，检测到冲突时返回错误码 `CONCURRENCY_CONFLICT`。
 
+### 错误码边界
+
+- **`INVALID_CONFIG_FORMAT`**: 用户配置文件的 JSON 解析失败（如语法错误、无效格式）
+- **`SERIALIZATION_ERROR`**: 内部序列化/反序列化失败（通常是系统层面的数据转换错误）
+
 ---
 
 ## 📂 项目结构
@@ -132,7 +137,9 @@ static/
 **错误码**:
 - `PATH_SECURITY_VIOLATION`: 路径不安全
 - `CONFIG_NOT_FOUND`: 文件不存在
-- `INVALID_CONFIG_FORMAT`: JSON 格式错误
+- `INVALID_CONFIG_FORMAT`: JSON 格式错误（用户配置文件的解析失败）
+- `IO_ERROR`: 文件操作失败
+- `SERIALIZATION_ERROR`: 内部序列化错误
 
 ### `write_config(path, data, old_hash) -> Result<ConfigData, CommandError>`
 
@@ -142,6 +149,10 @@ static/
 - `CONCURRENCY_CONFLICT`: 版本哈希不匹配
   - `details.expected_hash`: 客户端提供的哈希
   - `details.actual_hash`: 服务器当前哈希
+- `PATH_SECURITY_VIOLATION`: 路径不安全
+- `INVALID_CONFIG_FORMAT`: 保存的数据格式无效
+- `SERIALIZATION_ERROR`: 内部序列化失败
+- `IO_ERROR`: 文件写入失败
 
 ### `get_schema(path) -> Result<Value, CommandError>`
 

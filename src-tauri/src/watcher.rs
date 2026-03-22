@@ -274,12 +274,27 @@ mod tests {
     use tempfile::TempDir;
     use serial_test::serial;
 
-    fn setup_test_workspace() -> TempDir {
-        let temp_dir = TempDir::new().unwrap();
-        std::env::set_current_dir(&temp_dir).unwrap();
-        let workspace = utils::workspace_dir();
-        std::fs::create_dir_all(&workspace).unwrap();
-        temp_dir
+    /// 工作目录 Guard，测试结束后自动恢复原目录
+    struct WorkingDirGuard {
+        original_dir: std::path::PathBuf,
+        _temp_dir: TempDir,
+    }
+
+    impl WorkingDirGuard {
+        fn new() -> Self {
+            let original_dir = std::env::current_dir().unwrap();
+            let temp_dir = TempDir::new().unwrap();
+            std::env::set_current_dir(&temp_dir).unwrap();
+            let workspace = utils::workspace_dir();
+            std::fs::create_dir_all(&workspace).unwrap();
+            Self { original_dir, _temp_dir: temp_dir }
+        }
+    }
+
+    impl Drop for WorkingDirGuard {
+        fn drop(&mut self) {
+            let _ = std::env::set_current_dir(&self.original_dir);
+        }
     }
 
     #[test]
@@ -355,7 +370,7 @@ mod tests {
     #[tokio::test]
     #[serial]
     async fn test_read_config_data_success() {
-        let _temp = setup_test_workspace();
+        let _guard = WorkingDirGuard::new();
 
         let test_data = serde_json::json!({"name": "test"});
         let file_path = utils::workspace_dir().join("test.json");
@@ -372,7 +387,7 @@ mod tests {
     #[tokio::test]
     #[serial]
     async fn test_read_config_data_not_found() {
-        let _temp = setup_test_workspace();
+        let _guard = WorkingDirGuard::new();
 
         let result = read_config_data("nonexistent.json").await;
         assert!(result.is_err());
