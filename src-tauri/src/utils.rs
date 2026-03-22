@@ -158,3 +158,75 @@ pub struct FileMeta {
     pub version_hash: String,
     pub last_modified: f64,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+    use tempfile::TempDir;
+
+    #[test]
+    fn test_validate_path_rejects_absolute() {
+        let result = validate_path("/etc/passwd");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("绝对路径"));
+    }
+
+    #[test]
+    fn test_validate_path_rejects_traversal() {
+        let result = validate_path("../etc/passwd");
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("路径穿越"));
+    }
+
+    #[test]
+    fn test_validate_path_accepts_relative() {
+        // 这个测试在工作目录存在时通过
+        let result = validate_path("app/config.json");
+        // 只要路径格式正确就应该成功（不关心文件是否存在）
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_compute_hash() {
+        let hash1 = compute_hash("test");
+        let hash2 = compute_hash("test");
+        let hash3 = compute_hash("different");
+
+        // 相同输入产生相同哈希
+        assert_eq!(hash1, hash2);
+        // 不同输入产生不同哈希
+        assert_ne!(hash1, hash3);
+        // SHA256 产生 64 位十六进制字符串
+        assert_eq!(hash1.len(), 64);
+    }
+
+    #[test]
+    fn test_atomic_write() {
+        let temp_dir = TempDir::new().unwrap();
+        let file_path = temp_dir.path().join("test.txt");
+
+        // 原子写入
+        atomic_write(&file_path, "Hello, World!").unwrap();
+
+        // 验证内容
+        let content = fs::read_to_string(&file_path).unwrap();
+        assert_eq!(content, "Hello, World!");
+    }
+
+    #[test]
+    fn test_atomic_write_overwrite() {
+        let temp_dir = TempDir::new().unwrap();
+        let file_path = temp_dir.path().join("test.txt");
+
+        // 先写入旧内容
+        fs::write(&file_path, "Old content").unwrap();
+
+        // 原子覆盖
+        atomic_write(&file_path, "New content").unwrap();
+
+        // 验证新内容
+        let content = fs::read_to_string(&file_path).unwrap();
+        assert_eq!(content, "New content");
+    }
+}

@@ -49,7 +49,7 @@ class TestStaticFiles:
         assert "Vue 3" in content or "vue@3" in content, "应加载 Vue 3"
         assert "tailwindcss" in content.lower(), "应加载 Tailwind CSS"
         assert "SchemaForm" in content, "应包含 SchemaForm 组件"
-        assert "EventSource" in content, "应使用 SSE"
+        assert "window.__TAURI__" in content, "应使用 Tauri IPC"
         assert "versionHash" in content, "应处理 versionHash"
 
 
