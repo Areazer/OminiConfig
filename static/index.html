@@ -431,6 +431,7 @@
                 const saveConfig = async () => {
                     if (!hasChanges.value) return;
                     isSaving.value = true;
+                    error.value = null;
                     
                     try {
                         const result = await invoke('write_config', {
@@ -444,7 +445,22 @@
                         originalData.value = JSON.parse(JSON.stringify(configData.value));
                         lastModified.value = result.meta.last_modified;
                     } catch (err) {
-                        error.value = err.message || '保存失败';
+                        const errorMsg = err.message || err.toString() || '保存失败';
+                        
+                        // CRITICAL: 检测并发冲突并显示 Toast
+                        if (errorMsg.includes('ConcurrencyConflict') || 
+                            errorMsg.includes('版本哈希不匹配') ||
+                            errorMsg.includes('version hash')) {
+                            // 从错误消息中提取服务器 hash
+                            const match = errorMsg.match(/实际[:：]\s*([a-f0-9]{8,})/i);
+                            if (match) {
+                                serverHash.value = match[1];
+                            }
+                            showConflictToast.value = true;
+                            error.value = '配置已被外部程序修改，请刷新后重试';
+                        } else {
+                            error.value = errorMsg;
+                        }
                     } finally {
                         isSaving.value = false;
                     }

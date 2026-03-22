@@ -42,11 +42,11 @@
 - **用途**: AI Agent 集成规范（机器可读文档）
 - **读者**: AI Agent（Cursor, Claude, Kimi, GPT-4）
 - **内容**:
-  - 绝对真理原则（Source of Truth）
+  - IPC 通信契约（Tauri invoke/listen）
   - 路径寻址铁律（禁止绝对路径和路径穿越）
   - 并发防冲突契约（乐观锁重试逻辑）
-  - SSE 监听规范（四种事件类型处理）
-  - 状态码字典（200/400/403/404/409 精确定义）
+  - 原生事件监听（Tauri event.listen）
+  - 错误类型映射（Rust -> TypeScript）
   - Python 和 TypeScript 完整代码模板
   - 禁止事项清单和验证清单
 - **特点**: 使用 MUST/SHALL NOT 等强制语气，无冗余寒暄语

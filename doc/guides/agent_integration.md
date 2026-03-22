@@ -285,13 +285,13 @@ const unlisten = await client.watch((newData) => {
 
 ### 错误类型映射
 
-| Rust Error | TypeScript Exception | HTTP 等效 |
-|-----------|---------------------|-----------|
-| `PathSecurityViolation` | `Error: PathSecurityViolation` | 403 Forbidden |
-| `ConfigNotFound` | `Error: ConfigNotFound` | 404 Not Found |
-| `ConcurrencyConflict` | `Error: ConcurrencyConflict` | 409 Conflict |
-| `InvalidConfigFormat` | `Error: InvalidConfigFormat` | 422 Unprocessable Entity |
-| `IoError` | `Error: IoError` | 500 Internal Server Error |
+| Rust Error | TypeScript Exception |
+|-----------|---------------------|
+| `PathSecurityViolation` | `Error: PathSecurityViolation` |
+| `ConfigNotFound` | `Error: ConfigNotFound` |
+| `ConcurrencyConflict` | `Error: ConcurrencyConflict` |
+| `InvalidConfigFormat` | `Error: InvalidConfigFormat` |
+| `IoError` | `Error: IoError` |
 
 ### 错误处理优先级
 
