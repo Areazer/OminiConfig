@@ -164,6 +164,7 @@ mod tests {
     use super::*;
     use std::fs;
     use tempfile::TempDir;
+    use serial_test::serial;
 
     #[test]
     fn test_validate_path_rejects_absolute() {
@@ -180,10 +181,13 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_validate_path_accepts_relative() {
-        // 这个测试在工作目录存在时通过
+        let temp_dir = TempDir::new().unwrap();
+        std::env::set_current_dir(&temp_dir).unwrap();
+        std::fs::create_dir_all(workspace_dir()).unwrap();
+
         let result = validate_path("app/config.json");
-        // 只要路径格式正确就应该成功（不关心文件是否存在）
         assert!(result.is_ok());
     }
 

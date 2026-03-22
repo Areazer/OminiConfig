@@ -173,14 +173,149 @@ async fn read_latest_config(
     relative_path: &str
 ) -> Result<(String, serde_json::Value), Box<dyn std::error::Error>> {
     let full_path = utils::validate_path(relative_path)?;
-    
+
     if !full_path.exists() {
         return Err("文件不存在".into());
     }
-    
+
     let content = utils::read_file_content(&full_path)?;
     let data: serde_json::Value = serde_json::from_str(&content)?;
     let hash = utils::compute_file_hash(&full_path)?;
-    
+
     Ok((hash, data))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::TempDir;
+    use serial_test::serial;
+
+    // 设置测试工作目录
+    fn setup_test_workspace() -> TempDir {
+        let temp_dir = TempDir::new().unwrap();
+        std::env::set_current_dir(&temp_dir).unwrap();
+        let workspace = utils::workspace_dir();
+        std::fs::create_dir_all(&workspace).unwrap();
+        temp_dir
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_read_latest_config_success() {
+        let _temp = setup_test_workspace();
+
+        // 创建测试文件
+        let test_data = serde_json::json!({"name": "test", "value": 123});
+        let file_path = utils::workspace_dir().join("watcher_test.json");
+        std::fs::create_dir_all(file_path.parent().unwrap()).unwrap();
+        std::fs::write(&file_path, serde_json::to_string_pretty(&test_data).unwrap()).unwrap();
+
+        // 读取配置
+        let result = read_latest_config("watcher_test.json").await;
+
+        assert!(result.is_ok());
+        let (hash, data) = result.unwrap();
+        assert!(!hash.is_empty());
+        assert_eq!(data["name"], "test");
+        assert_eq!(data["value"], 123);
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_read_latest_config_file_not_found() {
+        let _temp = setup_test_workspace();
+
+        // 尝试读取不存在的文件
+        let result = read_latest_config("nonexistent.json").await;
+
+        assert!(result.is_err());
+        let error_msg = result.unwrap_err().to_string();
+        assert!(error_msg.contains("不存在") || error_msg.contains("ConfigNotFound"));
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_read_latest_config_invalid_json() {
+        let _temp = setup_test_workspace();
+
+        // 创建无效的 JSON 文件
+        let file_path = utils::workspace_dir().join("invalid.json");
+        std::fs::create_dir_all(file_path.parent().unwrap()).unwrap();
+        std::fs::write(&file_path, "{invalid json}").unwrap();
+
+        // 尝试读取
+        let result = read_latest_config("invalid.json").await;
+
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_read_latest_config_empty_file() {
+        let _temp = setup_test_workspace();
+
+        // 创建空文件（不是有效的 JSON 对象）
+        let file_path = utils::workspace_dir().join("empty.json");
+        std::fs::create_dir_all(file_path.parent().unwrap()).unwrap();
+        std::fs::write(&file_path, "").unwrap();
+
+        // 尝试读取
+        let result = read_latest_config("empty.json").await;
+
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_read_latest_config_nested_structure() {
+        let _temp = setup_test_workspace();
+
+        // 创建嵌套结构
+        let test_data = serde_json::json!({
+            "app": {
+                "name": "MyApp",
+                "settings": {
+                    "port": 8080,
+                    "debug": true
+                }
+            },
+            "users": ["alice", "bob"]
+        });
+
+        let file_path = utils::workspace_dir().join("nested_watcher.json");
+        std::fs::create_dir_all(file_path.parent().unwrap()).unwrap();
+        std::fs::write(&file_path, serde_json::to_string_pretty(&test_data).unwrap()).unwrap();
+
+        // 读取配置
+        let result = read_latest_config("nested_watcher.json").await;
+
+        assert!(result.is_ok());
+        let (_, data) = result.unwrap();
+        assert_eq!(data["app"]["name"], "MyApp");
+        assert_eq!(data["app"]["settings"]["port"], 8080);
+        assert_eq!(data["users"][0], "alice");
+    }
+
+    #[test]
+    fn test_pending_event_creation() {
+        // 测试 PendingEvent 结构体的创建
+        let event = PendingEvent {
+            path: "test/config.json".to_string(),
+            last_event: Instant::now(),
+        };
+
+        assert_eq!(event.path, "test/config.json");
+        // 验证时间戳是合理的（在过去 1 秒内）
+        let elapsed = Instant::now().duration_since(event.last_event);
+        assert!(elapsed.as_secs() < 1);
+    }
+
+    #[test]
+    fn test_debounce_duration_constant() {
+        // 验证防抖时间配置
+        assert_eq!(DEBOUNCE_MS, 500);
+        let duration = Duration::from_millis(DEBOUNCE_MS);
+        assert_eq!(duration.as_millis(), 500);
+    }
 }
