@@ -40,6 +40,30 @@ cargo tauri build
 
 生产版本将打包到 `src-tauri/target/release/bundle/`。
 
+### 直接使用（无需编译）
+
+如果不想自己编译，可以直接使用已构建的二进制文件：
+
+**macOS/Linux:**
+```bash
+# 进入项目目录
+cd src-tauri/target/release
+
+# 运行（赋予执行权限后）
+chmod +x omini-config
+./omini-config
+```
+
+**Windows:**
+双击运行 `src-tauri\target\release\omini-config.exe`
+
+### 使用说明
+
+1. **首次启动**：运行后会在当前目录创建 `configs/` 文件夹作为工作目录
+2. **编辑配置**：在界面左侧输入配置文件路径（如 `app/settings.json`），右侧自动渲染表单
+3. **保存配置**：修改后点击"保存"按钮，系统自动检测冲突并提示
+4. **实时监听**：文件被外部修改时，界面会显示冲突提示
+
 ---
 
 ## 🏗️ 架构说明
