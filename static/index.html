@@ -428,19 +428,32 @@
                     error.value = null;
                     
                     try {
-                        const [schemaRes, configRes] = await Promise.all([
-                            invoke('get_schema', { path: configPath.value }),
-                            invoke('read_config', { path: configPath.value })
-                        ]);
+                        // 第一步：读取配置（如果不存在会自动创建空配置）
+                        const configRes = await invoke('read_config', { path: configPath.value });
                         
-                        schema.value = schemaRes;
                         configData.value = JSON.parse(JSON.stringify(configRes.data));
                         originalData.value = JSON.parse(JSON.stringify(configRes.data));
                         versionHash.value = configRes.meta.version_hash;
                         localHash.value = configRes.meta.version_hash;
                         lastModified.value = configRes.meta.last_modified;
                         
+                        // 第二步：获取 schema（失败不影响配置加载）
+                        try {
+                            const schemaRes = await invoke('get_schema', { path: configPath.value });
+                            schema.value = schemaRes;
+                        } catch (schemaErr) {
+                            console.warn('获取 schema 失败:', schemaErr);
+                            // 使用默认 schema
+                            schema.value = { type: 'object', properties: {} };
+                        }
+                        
+                        // 第三步：设置文件监听
                         setupWatcher();
+                        
+                        // 第四步：如果是空配置，显示提示
+                        if (Object.keys(configRes.data || {}).length === 0) {
+                            error.value = '提示：这是新配置文件，点击"保存"按钮创建默认配置';
+                        }
                     } catch (err) {
                         // 新协议：按 code 处理错误
                         if (err.code === 'PATH_SECURITY_VIOLATION') {
@@ -532,8 +545,11 @@
                                     break;
                                 case 'removed':
                                     // 文件被删除
-                                    showRemovedToast.value = true;
-                                    showConflictToast.value = false;
+                                    // 忽略首次加载时的误报（可能是文件创建过程中的临时状态）
+                                    if (versionHash.value && versionHash.value !== '') {
+                                        showRemovedToast.value = true;
+                                        showConflictToast.value = false;
+                                    }
                                     break;
                             }
                         });
