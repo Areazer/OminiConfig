@@ -38,14 +38,6 @@ impl CommandError {
         }
     }
 
-    pub fn invalid_format(reason: &str) -> Self {
-        Self {
-            code: ERR_INVALID_FORMAT.to_string(),
-            message: format!("无效的配置格式: {}", reason),
-            details: None,
-        }
-    }
-
     pub fn concurrency_conflict(expected: &str, actual: &str) -> Self {
         Self {
             code: ERR_CONCURRENCY_CONFLICT.to_string(),
@@ -127,7 +119,7 @@ impl From<ConfigError> for CommandError {
             ConfigError::PathSecurityViolation(msg) => CommandError::path_security(&msg),
             ConfigError::ConfigNotFound(path) => CommandError::config_not_found(&path),
             ConfigError::ConcurrencyConflict(exp, act) => CommandError::concurrency_conflict(&exp, &act),
-            ConfigError::InvalidConfigFormat(msg) => CommandError::invalid_format(&msg),
+            ConfigError::InvalidConfigFormat(msg) => CommandError::invalid_config_format(&msg),
             ConfigError::IoError(e) => CommandError::io_error(e),
             ConfigError::SerializationError(e) => CommandError::serialization_error(e),
         }
@@ -361,17 +353,25 @@ mod tests {
     #[test]
     #[serial]
     fn test_validate_path_accepts_relative() {
-        // 保存原工作目录
+        // 使用 RAII Guard 确保目录恢复
+        struct WorkingDirGuard {
+            original_dir: std::path::PathBuf,
+            _temp_dir: TempDir,
+        }
+        impl Drop for WorkingDirGuard {
+            fn drop(&mut self) {
+                let _ = std::env::set_current_dir(&self.original_dir);
+            }
+        }
+
         let original_dir = std::env::current_dir().unwrap();
         let temp_dir = TempDir::new().unwrap();
         std::env::set_current_dir(&temp_dir).unwrap();
         std::fs::create_dir_all(workspace_dir()).unwrap();
+        let _guard = WorkingDirGuard { original_dir, _temp_dir: temp_dir };
 
         let result = validate_path("app/config.json");
         assert!(result.is_ok());
-
-        // 恢复原工作目录
-        std::env::set_current_dir(original_dir).unwrap();
     }
 
     #[test]

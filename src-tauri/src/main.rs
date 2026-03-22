@@ -63,7 +63,7 @@ fn main() {
             let watcher_handle = watcher_thread.join().expect("watcher 线程启动失败");
             
             // 将 watcher 存入 Tauri state，由应用生命周期管理
-            // FileWatcher 的 Drop 实现确保资源正确释放
+            // 使用 Arc 以便在需要时共享所有权（当前实现直接持有即可）
             app.manage(WatcherState { _watcher: watcher_handle });
             
             Ok(())

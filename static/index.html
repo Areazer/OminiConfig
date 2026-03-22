@@ -26,15 +26,7 @@
     <!-- Vue 3 -->
     <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
     
-    <!-- Tauri API -->
-    <script type="module">
-        // 动态导入 Tauri API
-        const { invoke } = window.__TAURI__?.tauri || {};
-        const { listen } = window.__TAURI__?.event || {};
-        
-        window.tauriInvoke = invoke || (() => Promise.reject('Tauri not loaded'));
-        window.tauriListen = listen || (() => Promise.reject('Tauri not loaded'));
-    </script>
+    <!-- Tauri API - 直接通过 window.__TAURI__ 访问 -->
     
     <style>
         ::-webkit-scrollbar {

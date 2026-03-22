@@ -1,6 +1,6 @@
 # 🖥️ OminiConfig V2.0 (Native Desktop)
 
-> 一款通用编辑配置文件的**原生桌面应用**。双击即用，轻量化设计。
+> 一款通用编辑配置文件的**原生桌面应用**。采用 Rust + Tauri 构建，轻量化设计，专注于本地配置文件管理。
 
 OminiConfig V2.0 是从 Web 服务到原生应用的迁移版本，采用 **Rust + Tauri** 构建。
 
@@ -150,8 +150,7 @@ static/
   - `details.expected_hash`: 客户端提供的哈希
   - `details.actual_hash`: 服务器当前哈希
 - `PATH_SECURITY_VIOLATION`: 路径不安全
-- `INVALID_CONFIG_FORMAT`: 保存的数据格式无效
-- `SERIALIZATION_ERROR`: 内部序列化失败
+- `SERIALIZATION_ERROR`: 数据序列化失败（内部错误）
 - `IO_ERROR`: 文件写入失败
 
 ### `get_schema(path) -> Result<Value, CommandError>`
